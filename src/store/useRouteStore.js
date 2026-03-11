@@ -204,6 +204,45 @@ const useRouteStore = create((set, get) => ({
       set({ loading: false });
       setTimeout(() => set({ status: '' }), 3000); // Purge du message de statut après 3s
     }
+  },
+
+  loadRouteFromCloud: async (routeId) => {
+    set({ loading: true, status: 'Chargement de l\'itinéraire partagé...' });
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data, error } = await supabase
+        .from('saved_routes')
+        .select('*')
+        .eq('id', routeId)
+        .single();
+
+      if (error) throw error;
+      if (!data) throw new Error("Route introuvable");
+
+      // Reconstruction de l'état
+      set({
+        waypoints: data.waypoints,
+        routes: [{
+          distance: data.weather_score?.distance || 0,
+          duration: 0, // Optionnel, on n'a pas sauvegardé la durée exacte, on peut l'estimer ou l'ignorer
+          geometry: data.geometry,
+          summary: data.title
+        }],
+        activeRouteIndex: 0,
+        routeScore: data.weather_score,
+        status: 'Itinéraire chargé !',
+      });
+
+      // Recalcule les détails (Météo, POIs, Dénivelé) car ils dépendent de l'heure actuelle
+      await get().calculateRouteDetails(0);
+
+    } catch (err) {
+      console.error("Erreur Chargement Route :", err);
+      set({ status: 'Route introuvable ou erreur de chargement.' });
+    } finally {
+      set({ loading: false });
+      setTimeout(() => set({ status: '' }), 4000);
+    }
   }
 }));
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { Milestone, Map as MapIcon, Loader2, Download, ChevronUp, ChevronDown, User, LogOut } from 'lucide-react';
 import MapContainer from './components/MapContainer';
 import ElevationProfile from './components/ElevationProfile';
@@ -33,6 +34,7 @@ function App() {
 
   const { isTracking, position } = useLocationStore();
   const { user, isInitialized, initialize, signOut } = useAuthStore();
+  const { routeId } = useParams();
   
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -51,6 +53,13 @@ function App() {
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Chargement d'un itinéraire partagé depuis Supabase si l'URL contient un ID
+  useEffect(() => {
+    if (routeId) {
+      useRouteStore.getState().loadRouteFromCloud(routeId);
+    }
+  }, [routeId]);
 
   const handleCenterMap = (coords) => {
     if (mapCenterRef.current) {
