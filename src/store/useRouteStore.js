@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { searchPlaces, getRoute, sampleRoutePoints, getWeatherData, getElevationData } from '../services/api';
 import { getVitalPOIs } from '../services/overpass';
 import { calculateRouteScore, getScoreGrade } from '../utils/WeatherScorer';
+import { supabase } from '../lib/supabase';
 
 const useRouteStore = create((set, get) => ({
   // State
@@ -183,7 +184,6 @@ const useRouteStore = create((set, get) => ({
 
     set({ loading: true, status: 'Sauvegarde dans le cloud...' });
     try {
-      const { supabase } = await import('../lib/supabase');
       const { data, error } = await supabase.from('saved_routes').insert([{
         user_id: userId,
         title,
@@ -209,7 +209,6 @@ const useRouteStore = create((set, get) => ({
   loadRouteFromCloud: async (routeId) => {
     set({ loading: true, status: 'Chargement de l\'itinéraire partagé...' });
     try {
-      const { supabase } = await import('../lib/supabase');
       const { data, error } = await supabase
         .from('saved_routes')
         .select('*')
