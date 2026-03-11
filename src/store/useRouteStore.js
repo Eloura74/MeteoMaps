@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { searchPlaces, getRoute, sampleRoutePoints, getWeatherData, getElevationData } from '../services/api';
 import { getVitalPOIs } from '../services/overpass';
-import { calculateRouteScore, getScoreGrade } from '../utils/WeatherScorer';
+import { calculateRouteScore, getScoreGrade, calculateBearing, calculateRelativeWind } from '../utils/WeatherScorer';
 import { supabase } from '../lib/supabase';
 
 const useRouteStore = create((set, get) => ({
@@ -22,6 +22,7 @@ const useRouteStore = create((set, get) => ({
   status: '',
   departureDate: new Date().toISOString().slice(0, 16),
   weatherAlerts: [],
+  userRoutes: [], // Bibliothèque des trajets de l'utilisateur
 
   // Setters
   setMode: (mode) => set({ mode }),
@@ -74,7 +75,17 @@ const useRouteStore = create((set, get) => ({
       const sampledWaypoints = sampleRoutePoints(route, 8);
       const baseTs = Math.floor(new Date(departureDate).getTime() / 1000);
       const weatherData = await getWeatherData(sampledWaypoints, baseTs);
-      set({ weatherPoints: weatherData });
+      
+      // Enrichinement Aero
+      const enrichedWeather = weatherData.map((wp, idx) => {
+          if (idx === 0) return { ...wp, aero: { headwind: 0, tailwind: 0, crosswind: 0 } };
+          const prev = weatherData[idx - 1];
+          const bearing = calculateBearing(prev.lat, prev.lng, wp.lat, wp.lng);
+          const aero = calculateRelativeWind(wp.weather.wind_speed_10m, wp.weather.wind_direction_10m, bearing);
+          return { ...wp, aero };
+      });
+
+      set({ weatherPoints: enrichedWeather });
 
       set({ status: 'Analyse du relief et dénivelé...' });
       const sampledElevation = sampleRoutePoints(route, 30);
@@ -241,6 +252,48 @@ const useRouteStore = create((set, get) => ({
     } finally {
       set({ loading: false });
       setTimeout(() => set({ status: '' }), 4000);
+    }
+  },
+
+  fetchUserRoutes: async (userId) => {
+    if (!userId) return;
+    set({ loading: true, status: 'Récupération de vos expéditions...' });
+    try {
+      const { data, error } = await supabase
+        .from('saved_routes')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      set({ userRoutes: data || [] });
+    } catch (err) {
+      console.error("Erreur Fetch Routes :", err);
+      set({ status: 'Erreur lors du chargement de la bibliothèque.' });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  deleteRouteFromCloud: async (routeId, userId) => {
+    set({ status: 'Suppression en cours...' });
+    try {
+      const { error } = await supabase
+        .from('saved_routes')
+        .delete()
+        .eq('id', routeId);
+
+      if (error) throw error;
+      
+      // Mise à jour locale
+      const currentRoutes = get().userRoutes;
+      set({ userRoutes: currentRoutes.filter(r => r.id !== routeId) });
+      set({ status: 'Expédition supprimée.' });
+    } catch (err) {
+      console.error("Erreur Delete Route :", err);
+      set({ status: 'Erreur lors de la suppression.' });
+    } finally {
+      setTimeout(() => set({ status: '' }), 3000);
     }
   }
 }));

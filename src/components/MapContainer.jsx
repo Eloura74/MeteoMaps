@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Layers, Globe, Map as MapIcon, CloudRain } from 'lucide-react';
+import { Layers, Globe, Map as MapIcon, CloudRain, Wind } from 'lucide-react';
 import useLocationStore from '../store/useLocationStore';
+import WindLayer from './WindLayer';
 
 // Fix for default marker icons in Leaflet with React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -63,6 +64,7 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
   
   const [activeView, setActiveView] = useState('standard');
   const [radarEnabled, setRadarEnabled] = useState(false);
+  const [windEnabled, setWindEnabled] = useState(false);
   const { position, isTracking, accuracy } = useLocationStore();
 
   useEffect(() => {
@@ -297,6 +299,13 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
     <div className="h-full w-full relative z-10">
       <div ref={mapRef} className="h-full w-full" />
       
+      {/* Dynamic Layers */}
+      <WindLayer 
+        map={mapInstanceRef.current} 
+        weatherPoints={weatherPoints} 
+        enabled={windEnabled} 
+      />
+      
       {/* HUD Layer Control */}
       <div className="absolute top-3 right-3 md:top-6 md:right-6 z-[1000] flex flex-col gap-2">
         <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-lg p-1.5 shadow-2xl flex flex-col gap-1">
@@ -327,6 +336,17 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
             <CloudRain size={16} className={radarEnabled ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} />
             <span className="text-[10px] font-black uppercase tracking-widest pr-2 hidden md:block">
               Radar Pluie
+            </span>
+          </button>
+
+          <button
+            onClick={() => setWindEnabled(!windEnabled)}
+            className={`flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group ${windEnabled ? 'bg-teal-900/40 text-teal-400' : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}
+            title="Animation du Vent"
+          >
+            <Wind size={16} className={windEnabled ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} />
+            <span className="text-[10px] font-black uppercase tracking-widest pr-2 hidden md:block">
+              Flux de Vent
             </span>
           </button>
         </div>

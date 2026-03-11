@@ -1,5 +1,5 @@
 import React from 'react';
-import { Thermometer, Sun, Moon, Cloud, CloudSun, CloudMoon, CloudLightning, Wind, CloudRain } from 'lucide-react';
+import { Thermometer, Sun, Moon, Cloud, CloudSun, CloudMoon, CloudLightning, Wind, CloudRain, ArrowUp, ArrowDown, MoveHorizontal } from 'lucide-react';
 
 export const getWeatherIcon = (code, isDay) => {
   const icons = {
@@ -62,12 +62,33 @@ const WeatherTimeline = ({ weatherPoints }) => {
                     </span>
                   </div>
                   <div className="text-sm font-black text-white">{p.weather ? `${Math.round(p.weather.temperature_2m)}°` : '--'}</div>
-                  <div className="flex flex-col items-center gap-1.5">
-                    <div className="flex items-center gap-1 text-[8px] font-black uppercase text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
-                      <Wind size={8} /> {p.weather ? Math.round(p.weather.wind_speed_10m) : 0}
+                   <div className="flex flex-col items-center gap-1.5 w-full">
+                    <div className="flex items-center justify-between w-full px-1 text-[8px] font-black uppercase text-slate-500 bg-white/5 py-1 rounded">
+                      <div className="flex items-center gap-1">
+                        <Wind size={8} /> <span>{p.weather ? Math.round(p.weather.wind_speed_10m) : 0}</span>
+                      </div>
+                      {p.aero && (
+                        <div className="flex gap-1">
+                          {p.aero.headwind > 2 && (
+                            <span className="text-red-400 flex items-center bg-red-400/10 px-0.5 rounded" title="Vent de face">
+                              <ArrowUp size={8} />
+                            </span>
+                          )}
+                          {p.aero.tailwind > 5 && (
+                            <span className="text-emerald-400 flex items-center bg-emerald-400/10 px-0.5 rounded" title="Vent de dos">
+                              <ArrowDown size={8} />
+                            </span>
+                          )}
+                          {p.aero.crosswind > 10 && (
+                            <span className="text-blue-400 flex items-center bg-blue-400/10 px-0.5 rounded" title="Vent de travers">
+                              <MoveHorizontal size={8} />
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 text-[8px] font-black uppercase text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
-                      <CloudRain size={8} /> {p.weather ? p.weather.precipitation : 0}
+                    <div className="flex items-center gap-1 text-[8px] font-black uppercase text-slate-500 bg-white/5 w-full justify-center py-1 rounded">
+                      <CloudRain size={8} /> {p.weather ? p.weather.precipitation : 0} <span className="text-[6px] opacity-60">mm</span>
                     </div>
                   </div>
               </div>

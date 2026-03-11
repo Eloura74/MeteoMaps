@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Milestone, Map as MapIcon, Loader2, Download, ChevronUp, ChevronDown, User, LogOut } from 'lucide-react';
+import { Milestone, Map as MapIcon, Loader2, Download, ChevronUp, ChevronDown, User, LogOut, Library } from 'lucide-react';
 import MapContainer from './components/MapContainer';
 import ElevationProfile from './components/ElevationProfile';
 import SearchPanel from './features/routing/SearchPanel';
@@ -12,6 +12,7 @@ import useLocationStore from './store/useLocationStore';
 import AuthModal from './components/AuthModal';
 import useAuthStore from './store/useAuthStore';
 import SaveRouteButton from './components/SaveRouteButton';
+import RouteLibrary from './components/RouteLibrary';
 
 function App() {
   const {
@@ -38,6 +39,7 @@ function App() {
   
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const mapCenterRef = useRef(null);
   const activeRoute = routes[activeRouteIndex];
 
@@ -186,36 +188,62 @@ function App() {
         {/* HUD GPS (Toujours visible, par dessus tout) */}
         <GpsOverlay onCenterRequest={handleCenterMap} />
 
-        {/* Auth Badge (Top Left) */}
+        {/* Bibliothèque et Authentification */}
         {isInitialized && (
-          <div className="absolute top-3 left-3 md:top-6 md:left-6 z-[1000]">
-            {user ? (
-              <button 
-                onClick={signOut}
-                className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-full pl-3 pr-4 py-2 hover:bg-slate-800 transition-colors shadow-2xl flex items-center gap-2 text-sm text-slate-300 group"
-                title="Se déconnecter"
+          <div className="absolute top-3 left-3 md:top-6 md:left-6 z-[1000] flex gap-2">
+            {user && (
+              <button
+                onClick={() => setIsLibraryOpen(true)}
+                className="p-2.5 bg-slate-950/60 hover:bg-slate-800 text-slate-400 border border-white/5 rounded-lg transition-all flex items-center gap-2 group shadow-2xl backdrop-blur-md"
+                title="Mes Expéditions"
               >
-                <div className="bg-emerald-500/20 text-emerald-400 p-1.5 rounded-full group-hover:bg-red-500/20 group-hover:text-red-400 transition-colors">
-                  <User size={14} className="group-hover:hidden" />
-                  <LogOut size={14} className="hidden group-hover:block" />
-                </div>
-                <span className="font-semibold truncate max-w-[120px]">{user.email?.split('@')[0]}</span>
-              </button>
-            ) : (
-              <button 
-                onClick={() => setIsAuthModalOpen(true)}
-                className="bg-blue-600/90 hover:bg-blue-500 backdrop-blur-xl border border-blue-400/30 rounded-full px-4 py-2 md:py-2.5 shadow-2xl shadow-blue-900/20 flex items-center gap-2 text-sm font-bold text-white transition-all transform hover:scale-105"
-              >
-                <User size={16} />
-                <span>Connexion</span>
+                <Library size={18} className="group-hover:text-blue-400 transition-colors" />
+                <span className="text-[10px] font-black uppercase tracking-widest hidden md:inline">Mes Expéditions</span>
               </button>
             )}
+
+            <div className="flex items-center gap-2 bg-slate-950/60 border border-white/5 p-1 rounded-lg backdrop-blur-md shadow-2xl">
+              {user ? (
+                <div className="flex items-center gap-2 pr-2">
+                  <div className="w-8 h-8 rounded-md bg-blue-500/20 flex items-center justify-center text-blue-400 border border-blue-500/20">
+                    <User size={16} />
+                  </div>
+                  <div className="hidden md:block">
+                    <p className="text-[9px] font-black text-white leading-none truncate max-w-[80px]">
+                      {user.email.split('@')[0]}
+                    </p>
+                    <p className="text-[7px] text-slate-500 font-bold uppercase tracking-widest">Connecté</p>
+                  </div>
+                  <button
+                    onClick={signOut}
+                    className="p-1.5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded transition-colors"
+                    title="Déconnexion"
+                  >
+                    <LogOut size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-white transition-colors"
+                >
+                  Se connecter
+                </button>
+              )}
+            </div>
           </div>
         )}
-
-        {/* Modal d'Authentification */}
-        <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
       </main>
+
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+      />
+
+      <RouteLibrary 
+        isOpen={isLibraryOpen}
+        onClose={() => setIsLibraryOpen(false)}
+      />
     </div>
   );
 }
