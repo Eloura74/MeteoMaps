@@ -173,7 +173,7 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
       <div ref={mapRef} className="h-full w-full" />
       
       {/* HUD Layer Control */}
-      <div className="absolute top-6 right-6 z-[1000] flex flex-col gap-2">
+      <div className="absolute top-3 right-3 md:top-6 md:right-6 z-[1000] flex flex-col gap-2">
         <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-lg p-1.5 shadow-2xl flex flex-col gap-1">
           {Object.entries(VIEWS).map(([key, view]) => {
             const Icon = view.icon;
