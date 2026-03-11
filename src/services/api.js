@@ -6,7 +6,7 @@
  */
 
 const PHOTON_URL = 'https://photon.komoot.io/api/';
-const OSRM_URL = 'https://router.project-osrm.org/route/v1/';
+const OSRM_BASE_URL = 'https://routing.openstreetmap.de/';
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 const ELEVATION_URL = 'https://api.open-meteo.com/v1/elevation';
 
@@ -97,9 +97,15 @@ export async function searchPlaces(query) {
  */
 export async function getRoute(points, mode = 'driving') {
   if (!points || points.length < 2) throw new Error('At least 2 points required');
-  const osrmMode = mode === 'bike' ? 'cycling' : mode === 'foot' ? 'walking' : 'driving';
+  
+  // OSRM public server mapped to specific OpenStreetMap routing servers
+  const osrmProfile = mode === 'bike' ? 'routed-bike' : mode === 'foot' ? 'routed-foot' : 'routed-car';
+  
   const coordsString = points.map(p => `${p[0]},${p[1]}`).join(';');
-  const url = `${OSRM_URL}${osrmMode}/${coordsString}?overview=full&geometries=geojson&alternatives=3`;
+  
+  // Note: For routing.openstreetmap.de, the internal profile is always "driving" in the v1 path, 
+  // the separation is done at the sub-service level (routed-car, etc.)
+  const url = `${OSRM_BASE_URL}${osrmProfile}/route/v1/driving/${coordsString}?overview=full&geometries=geojson&alternatives=3`;
   
   const cacheKey = `route_${url}`;
   const cached = getCached(cacheKey);
