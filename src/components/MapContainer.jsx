@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Layers, Globe, Map as MapIcon, Activity, CloudRain } from 'lucide-react';
+import { Layers, Globe, Map as MapIcon, CloudRain } from 'lucide-react';
+import useLocationStore from '../store/useLocationStore';
 
 // Fix for default marker icons in Leaflet with React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -26,21 +27,43 @@ const VIEWS = {
   },
   terrain: {
     name: 'Topographie',
-    icon: Activity,
+    icon: Globe, // Changed from Activity as Activity was removed from imports
     url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)'
   }
 };
 
-const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weatherPoints }) => {
+// POIs Custom Icons
+const WaterIcon = L.divIcon({
+  html: `<div class="w-7 h-7 bg-blue-500 rounded-full border-2 border-slate-900 flex items-center justify-center text-white shadow-lg shadow-blue-500/20"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-droplets"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7 2.9 7 2.9s-2.15 5.25-2.29 6.16C3.57 10 3 11.09 3 12.25 3 14.47 4.8 16.3 7 16.3z"/><path d="M15 22.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S15 8.9 15 8.9s-2.15 5.25-2.29 6.16c-.14.91-.71 2-1.71 3.16-1.14.93-1.71 2.03-1.71 3.19 0 2.22 1.8 4.05 4 4.05z"/></svg></div>`,
+  className: '',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+});
+
+const ShelterIcon = L.divIcon({
+  html: `<div class="w-7 h-7 bg-amber-600 rounded-full border-2 border-slate-900 flex items-center justify-center text-white shadow-lg shadow-amber-600/20"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-tent"><path d="M3.5 21 14 3"/><path d="M20.5 21 10 3"/><path d="M15.5 21 12 15l-3.5 6"/><path d="M2 21h20"/></svg></div>`,
+  className: '',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+});
+
+const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weatherPoints = [], pois = [], onRegisterCenterFunction }) => {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const layerRef = useRef(null);
   const routeLayerRef = useRef(null);
   const markersRef = useRef([]);
+  const poiMarkersRef = useRef([]);
   const radarLayerRef = useRef(null);
+  const userMarkerRef = useRef(null);
+  const userAccuracyRingRef = useRef(null);
+  
   const [activeView, setActiveView] = useState('standard');
   const [radarEnabled, setRadarEnabled] = useState(false);
+  const { position, isTracking, accuracy } = useLocationStore();
 
   useEffect(() => {
     if (!mapInstanceRef.current && mapRef.current) {
@@ -55,8 +78,15 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
       }).addTo(mapInstanceRef.current);
 
       L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
+
+      // Enregistre la fonction de ciblage vers le parent
+      if (onRegisterCenterFunction) {
+        onRegisterCenterFunction((coords) => {
+          mapInstanceRef.current.flyTo(coords, 16, { animate: true, duration: 1 });
+        });
+      }
     }
-  }, []);
+  }, [onRegisterCenterFunction]);
 
   // Update TileLayer when view changes
   useEffect(() => {
@@ -64,6 +94,60 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
       layerRef.current.setUrl(VIEWS[activeView].url);
     }
   }, [activeView]);
+
+  // Live GPS Tracking Render
+  useEffect(() => {
+    if (!mapInstanceRef.current || !position || !isTracking) {
+      if (userMarkerRef.current) {
+        mapInstanceRef.current.removeLayer(userMarkerRef.current);
+        userMarkerRef.current = null;
+      }
+      if (userAccuracyRingRef.current) {
+        mapInstanceRef.current.removeLayer(userAccuracyRingRef.current);
+        userAccuracyRingRef.current = null;
+      }
+      return;
+    }
+
+    const posLatLng = [position.lat, position.lng];
+
+    // Create or update marker
+    if (!userMarkerRef.current) {
+      // Create user dot
+      const userIcon = L.divIcon({
+        className: 'user-gps-marker',
+        html: `<div class="relative w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+                 <div class="absolute inset-0 rounded-full bg-blue-400 animate-ping opacity-75"></div>
+               </div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      userMarkerRef.current = L.marker(posLatLng, { icon: userIcon, zIndexOffset: 1000 }).addTo(mapInstanceRef.current);
+      
+      // Auto-center on first fix
+      mapInstanceRef.current.flyTo(posLatLng, 16, { animate: true, duration: 1 });
+    } else {
+      userMarkerRef.current.setLatLng(posLatLng);
+    }
+
+    // Create or update accuracy ring
+    if (accuracy) {
+      if (!userAccuracyRingRef.current) {
+        userAccuracyRingRef.current = L.circle(posLatLng, {
+          radius: accuracy,
+          color: '#3b82f6',
+          fillColor: '#3b82f6',
+          fillOpacity: 0.1,
+          weight: 1,
+          dashArray: '4,4'
+        }).addTo(mapInstanceRef.current);
+      } else {
+        userAccuracyRingRef.current.setLatLng(posLatLng);
+        userAccuracyRingRef.current.setRadius(accuracy);
+      }
+    }
+    
+  }, [position, isTracking, accuracy]);
 
   useEffect(() => {
     if (mapInstanceRef.current && routes && routes.length > 0) {
@@ -168,6 +252,32 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
     }
   }, [weatherPoints]);
 
+  // Effect for POIs
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    // Clear previous POI markers
+    poiMarkersRef.current.forEach(m => mapInstanceRef.current.removeLayer(m));
+    poiMarkersRef.current = [];
+
+    if (pois && pois.length > 0) {
+      pois.forEach(poi => {
+        const icon = poi.category === 'water' ? WaterIcon : ShelterIcon;
+        const popupHtml = `
+          <div class="text-center font-sans tracking-tight p-2">
+            <div class="font-bold text-slate-800 text-[13px] uppercase tracking-wide mb-1">${poi.name}</div>
+            <div class="text-[10px] text-slate-500 font-semibold">${poi.category === 'water' ? "Point d'Eau" : "Refuge / Abri"}</div>
+          </div>
+        `;
+        const marker = L.marker([poi.lat, poi.lng], { icon })
+          .bindPopup(popupHtml, { className: 'meteo-popup' })
+          .addTo(mapInstanceRef.current);
+          
+        poiMarkersRef.current.push(marker);
+      });
+    }
+  }, [pois]);
+
   return (
     <div className="h-full w-full relative z-10">
       <div ref={mapRef} className="h-full w-full" />
@@ -206,6 +316,7 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
           </button>
         </div>
       </div>
+
     </div>
   );
 };

@@ -65,9 +65,9 @@ const SearchPanel = () => {
                   {/* Suggestions */}
                   {wp.suggestions && wp.suggestions.length > 0 && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-white/10 rounded-lg shadow-2xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1">
-                      {wp.suggestions.map(p => (
+                      {wp.suggestions.map((p, pIdx) => (
                         <button 
-                          key={p.id}
+                          key={`${p.id}-${pIdx}`}
                           onClick={() => handleSelectPlace(wp.id, p)}
                           className="w-full px-4 py-3 text-left text-sm hover:bg-white/5 border-b border-white/5 last:border-0 flex flex-col transition-colors"
                         >

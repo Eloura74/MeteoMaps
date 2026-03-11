@@ -18,7 +18,7 @@ const ElevationProfile = ({ points, totalAscent }) => {
   const getY = (val) => height - padding - ((val - min) / range) * (height - 2 * padding);
 
   const pathData = points.map((p, i) => `${getX(i)},${getY(p.elevation)}`).join(' L ');
-  const areaData = `${pathData} L ${width},${height} L 0,${height} Z`;
+  const areaData = `M ${pathData} L ${width},${height} L 0,${height} Z`;
 
   return (
     <div className="space-y-3 mt-6 animate-in fade-in slide-in-from-bottom-2 duration-700">

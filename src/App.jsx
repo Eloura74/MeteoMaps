@@ -1,23 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Milestone, Map as MapIcon, Loader2, Download, ChevronUp, ChevronDown } from 'lucide-react';
 import MapContainer from './components/MapContainer';
 import ElevationProfile from './components/ElevationProfile';
 import SearchPanel from './features/routing/SearchPanel';
 import WeatherTimeline from './features/weather/WeatherTimeline';
 import useRouteStore from './store/useRouteStore';
+import { getGradeColor } from './utils/WeatherScorer';
+import GpsOverlay from './components/GpsOverlay';
+import useLocationStore from './store/useLocationStore';
 
 function App() {
-  const { routes, activeRouteIndex, weatherPoints, elevationPoints, totalAscent, loading, status, weatherAlerts, exportGPX, calculateRouteDetails } = useRouteStore();
-  const activeRoute = routes[activeRouteIndex];
+  const {
+    waypoints,
+    route,
+    routes,
+    activeRouteIndex,
+    setActiveRoute,
+    weatherPoints,
+    elevationPoints,
+    totalAscent,
+    routeScore,
+    pois,
+    loading,
+    status,
+    weatherAlerts,
+    exportGPX,
+    calculateRouteDetails
+  } = useRouteStore();
 
+  const { isTracking, position } = useLocationStore();
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+  const mapCenterRef = useRef(null);
+  const activeRoute = routes[activeRouteIndex];
 
   // Re-collapse the panel on mobile when a new route is selected/ready
   useEffect(() => {
-    if (activeRoute) {
+    // Close panel on calculation success
+    if (routes && routes.length > 0) {
       setIsMobileExpanded(false);
     }
-  }, [activeRoute]);
+  }, [routes]);
+
+  const handleCenterMap = (coords) => {
+    if (mapCenterRef.current) {
+      mapCenterRef.current([coords.lat, coords.lng]);
+    }
+  };
 
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 text-slate-200 overflow-hidden font-sans relative">
@@ -79,14 +107,20 @@ function App() {
               </div>
              )}
 
-             <div className="grid grid-cols-2 gap-3 md:gap-4">
-                <div className="bg-slate-950/60 p-4 rounded-lg border border-white/5">
-                   <div className="text-[9px] text-slate-500 uppercase font-black mb-1.5 tracking-widest">Distance</div>
-                   <div className="text-sm font-black text-slate-200 tracking-tight">{(activeRoute.distance / 1000).toFixed(1)} <span className="text-[9px] text-slate-500">KM</span></div>
+             <div className="grid grid-cols-3 gap-2 md:gap-4">
+                <div className="bg-slate-950/60 p-3 rounded-lg border border-white/5 flex flex-col justify-between">
+                   <div className="text-[9px] text-slate-500 uppercase font-black tracking-widest leading-tight">Climat &<br/>Relief</div>
+                   <div className={`mt-2 text-xl font-black rounded border px-2 py-0.5 self-start ${routeScore ? getGradeColor(routeScore.grade) : 'text-slate-500 border-slate-500/30'}`}>
+                      {routeScore ? routeScore.grade : '-'}
+                   </div>
                 </div>
-                <div className="bg-slate-950/60 p-4 rounded-lg border border-white/5">
+                <div className="bg-slate-950/60 p-3 rounded-lg border border-white/5 flex flex-col justify-between">
+                   <div className="text-[9px] text-slate-500 uppercase font-black mb-1.5 tracking-widest">Distance</div>
+                   <div className="text-sm font-black text-slate-200 tracking-tight">{(activeRoute.distance / 1000).toFixed(1)} <span className="text-[8px] text-slate-500">KM</span></div>
+                </div>
+                <div className="bg-slate-950/60 p-3 rounded-lg border border-white/5 flex flex-col justify-between">
                    <div className="text-[9px] text-slate-500 uppercase font-black mb-1.5 tracking-widest">Durée</div>
-                   <div className="text-sm font-black text-slate-200 tracking-tight">{Math.floor(activeRoute.duration / 60)} <span className="text-[9px] text-slate-500">MIN</span></div>
+                   <div className="text-sm font-black text-slate-200 tracking-tight">{Math.floor(activeRoute.duration / 60)} <span className="text-[8px] text-slate-500">MIN</span></div>
                 </div>
              </div>
 
@@ -111,12 +145,21 @@ function App() {
 
       {/* Main Map Area */}
       <main className="absolute inset-0 md:relative md:flex-1 bg-slate-950 flex flex-col z-0">
-        <MapContainer 
-          routes={routes} 
-          activeRouteIndex={activeRouteIndex} 
-          onRouteSelect={calculateRouteDetails} 
-          weatherPoints={weatherPoints} 
-        />
+        {/* Map Content - 50% hauteur sur mobile, full width sur desktop */}
+        <div className={`transition-all duration-300 ease-in-out absolute inset-0 md:static ${isMobileExpanded ? 'h-[55vh]' : 'h-[100vh]'} md:h-auto`}>
+          <div className="h-full w-full relative">
+            <MapContainer 
+              routes={routes} 
+              activeRouteIndex={activeRouteIndex}
+              onRouteSelect={setActiveRoute}
+              weatherPoints={weatherPoints} 
+              pois={pois}
+              onRegisterCenterFunction={(fn) => mapCenterRef.current = fn}
+            />
+            <GpsOverlay onCenterRequest={handleCenterMap} />
+          </div>
+        </div>
+
         {!activeRoute && !loading && (
           <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center p-8 md:p-12 text-center bg-slate-950/20 backdrop-blur-[2px]">
             <div className="max-w-xs md:max-w-md bg-slate-900/80 backdrop-blur-xl p-8 md:p-10 rounded-2xl md:rounded-xl border border-white/10 space-y-4 md:space-y-6 shadow-2xl transform hover:scale-[1.01] transition-transform duration-500 mb-[30vh] md:mb-0">

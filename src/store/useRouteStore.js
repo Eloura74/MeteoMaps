@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { searchPlaces, getRoute, sampleRoutePoints, getWeatherData, getElevationData } from '../services/api';
+import { getVitalPOIs } from '../services/overpass';
+import { calculateRouteScore, getScoreGrade } from '../utils/WeatherScorer';
 
 const useRouteStore = create((set, get) => ({
   // State
@@ -13,6 +15,8 @@ const useRouteStore = create((set, get) => ({
   weatherPoints: [],
   elevationPoints: [],
   totalAscent: 0,
+  pois: [],
+  routeScore: null,
   loading: false,
   status: '',
   departureDate: new Date().toISOString().slice(0, 16),
@@ -83,6 +87,18 @@ const useRouteStore = create((set, get) => ({
         if (diff > 0) ascent += diff;
       }
       set({ totalAscent: Math.round(ascent) });
+
+      // Calculate Smart Route Score
+      const scoreNum = calculateRouteScore({ 
+          distance: route.distance, 
+          totalAscent: ascent, 
+          weatherPoints: weatherData 
+      });
+      set({ routeScore: { value: scoreNum, grade: getScoreGrade(scoreNum) } });
+
+      set({ status: 'Recherche des points d\'eau et abris...' });
+      const poisData = await getVitalPOIs(route.geometry.coordinates);
+      set({ pois: poisData });
 
       // Analyze Weather Alerts
       const alerts = [];
