@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Météo Trajet | J.A.R.V.I.S. Interface</title>
+
+    <!-- Tailwind CSS pour le style utilitaire et le design system -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Leaflet CSS & JS pour la cartographie -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <!-- FontAwesome pour les icônes -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+
+    <style>
+      /* Optimisations pour l'affichage de la carte et du layout */
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        background-color: #0f172a;
+      }
+      #map {
+        height: 100%;
+        width: 100%;
+        z-index: 10;
+      }
+
+      /* Style personnalisé pour les popups météo Leaflet */
+      .weather-popup .leaflet-popup-content-wrapper {
+        background-color: #1e293b;
+        color: #f8fafc;
+        border-radius: 0.5rem;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+      }
+      .weather-popup .leaflet-popup-tip {
+        background-color: #1e293b;
+      }
+      .weather-popup .leaflet-popup-content {
+        margin: 12px;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+      }
+
+      /* Loader d'attente */
+      .loader {
+        border: 3px solid rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        border-top: 3px solid #3b82f6;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        vertical-align: middle;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body class="flex flex-col md:flex-row h-screen text-slate-200">
+    <!-- Panneau de contrôle latéral -->
+    <aside
+      class="w-full md:w-96 bg-slate-900 border-r border-slate-700 p-6 flex flex-col gap-6 z-20 shadow-2xl relative overflow-y-auto"
+    >
+      <div>
+        <h1 class="text-2xl font-bold text-blue-400 flex items-center gap-2">
+          <i class="fa-solid fa-route"></i> Météo Trajet
+        </h1>
+        <p class="text-xs text-slate-400 mt-1">
+          Analyse contextuelle des conditions climatiques sur itinéraire.
+        </p>
+      </div>
+
+      <form id="routeForm" class="flex flex-col gap-4">
+        <!-- Point de départ -->
+        <div>
+          <label
+            class="block text-sm font-medium text-slate-400 mb-1"
+            for="start"
+            >Point A (Départ)</label
+          >
+          <div class="relative">
+            <i
+              class="fa-solid fa-location-dot absolute left-3 top-3 text-slate-500"
+            ></i>
+            <input
+              type="text"
+              id="start"
+              required
+              placeholder="Ex: Istres, France"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 pl-10 pr-3 text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+            />
+          </div>
+        </div>
+
+        <!-- Point d'arrivée -->
+        <div>
+          <label class="block text-sm font-medium text-slate-400 mb-1" for="end"
+            >Point B (Arrivée)</label
+          >
+          <div class="relative">
+            <i
+              class="fa-solid fa-flag-checkered absolute left-3 top-3 text-slate-500"
+            ></i>
+            <input
+              type="text"
+              id="end"
+              required
+              placeholder="Ex: Marseille, France"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 pl-10 pr-3 text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+            />
+          </div>
+        </div>
+
+        <!-- Mode de transport -->
+        <div>
+          <label class="block text-sm font-medium text-slate-400 mb-1"
+            >Mode de transport</label
+          >
+          <div class="grid grid-cols-3 gap-2">
+            <label class="cursor-pointer">
+              <input
+                type="radio"
+                name="mode"
+                value="driving"
+                class="peer sr-only"
+                checked
+              />
+              <div
+                class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-center hover:bg-slate-700 peer-checked:border-blue-500 peer-checked:bg-blue-900/30 peer-checked:text-blue-400 transition-all"
+              >
+                <i class="fa-solid fa-car"></i>
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input
+                type="radio"
+                name="mode"
+                value="bike"
+                class="peer sr-only"
+              />
+              <div
+                class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-center hover:bg-slate-700 peer-checked:border-blue-500 peer-checked:bg-blue-900/30 peer-checked:text-blue-400 transition-all"
+              >
+                <i class="fa-solid fa-motorcycle"></i>
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input
+                type="radio"
+                name="mode"
+                value="foot"
+                class="peer sr-only"
+              />
+              <div
+                class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-center hover:bg-slate-700 peer-checked:border-blue-500 peer-checked:bg-blue-900/30 peer-checked:text-blue-400 transition-all"
+              >
+                <i class="fa-solid fa-person-walking"></i>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Bouton de soumission -->
+        <button
+          type="submit"
+          id="submitBtn"
+          class="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors flex justify-center items-center gap-2"
+        >
+          <span>Calculer l'itinéraire</span>
+        </button>
+      </form>
+
+      <!-- Zone de feedback / erreurs -->
+      <div id="statusArea" class="hidden rounded-lg p-3 text-sm"></div>
+
+      <!-- Informations d'itinéraire générées dynamiquement -->
+      <div
+        id="routeInfo"
+        class="hidden flex-col gap-2 mt-4 border-t border-slate-700 pt-4"
+      >
+        <h3
+          class="text-sm font-bold text-slate-300 uppercase tracking-wider mb-2"
+        >
+          Synthèse du trajet
+        </h3>
+        <div
+          class="flex justify-between items-center text-sm bg-slate-800 p-2 rounded"
+        >
+          <span class="text-slate-400">Distance totale :</span>
+          <span
+            id="infoDistance"
+            class="font-mono font-semibold text-blue-300"
+          ></span>
+        </div>
+        <div
+          class="flex justify-between items-center text-sm bg-slate-800 p-2 rounded"
+        >
+          <span class="text-slate-400">Temps estimé :</span>
+          <span
+            id="infoDuration"
+            class="font-mono font-semibold text-blue-300"
+          ></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Conteneur principal de la carte -->
+    <main class="flex-1 relative z-10">
+      <div id="map"></div>
+    </main>
+
+    <script>
+      /**
+       * INITIALISATION ET VARIABLES GLOBALES
+       */
+      let map;
+      let routeLayer;
+      let weatherMarkers = [];
+      const POINTS_METEO_COUNT = 5; // Nombre de points météo à afficher sur le trajet
+
+      // Initialisation de la carte Leaflet
+      function initMap() {
+        // Vue par défaut (France)
+        map = L.map("map", { zoomControl: false }).setView(
+          [46.2276, 2.2137],
+          6,
+        );
+
+        // Ajout des contrôles de zoom en bas à droite pour ne pas gêner le panel sur mobile
+        L.control.zoom({ position: "bottomright" }).addTo(map);
+
+        // Couche cartographique (Dark mode style via CartoDB pour un look technique/dashboard)
+        L.tileLayer(
+          "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+          {
+            attribution:
+              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: "abcd",
+            maxZoom: 20,
+          },
+        ).addTo(map);
+      }
+
+      /**
+       * FONCTIONS UTILITAIRES DE L'API
+       */
+
+      // 1. Géocodage via Nominatim (OpenStreetMap)
+      async function geocode(query) {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+        const response = await fetch(url);
+        if (!response.ok)
+          throw new Error(
+            "Erreur de communication avec le service de géocodage.",
+          );
+        const data = await response.json();
+        if (data.length === 0) throw new Error(`Lieu introuvable : ${query}`);
+        return {
+          lat: parseFloat(data[0].lat),
+          lon: parseFloat(data[0].lon),
+          name: data[0].display_name.split(",")[0], // Nom court
+        };
+      }
+
+      // 2. Routage via OSRM
+      async function getRoute(startCoords, endCoords, mode) {
+        // OSRM API attend lng,lat
+        const url = `https://router.project-osrm.org/route/v1/${mode}/${startCoords.lon},${startCoords.lat};${endCoords.lon},${endCoords.lat}?overview=full&geometries=geojson`;
+        const response = await fetch(url);
+        if (!response.ok)
+          throw new Error(
+            "Erreur de communication avec le service de routage OSRM.",
+          );
+        const data = await response.json();
+        if (data.code !== "Ok")
+          throw new Error(
+            `Impossible de calculer l'itinéraire : ${data.message || data.code}`,
+          );
+        return data.routes[0];
+      }
+
+      // 3. Extraction des waypoints (échantillonnage de la géométrie du trajet)
+      function extractWaypoints(geojson, numPoints) {
+        const coords = geojson.coordinates;
+        const totalCoords = coords.length;
+        const waypoints = [];
+
+        for (let i = 0; i < numPoints; i++) {
+          // Calculer l'index proportionnel
+          let index = Math.floor((i * (totalCoords - 1)) / (numPoints - 1));
+          // OSRM renvoie [lon, lat], on convertit en {lat, lon}
+          waypoints.push({
+            lat: coords[index][1],
+            lon: coords[index][0],
+            isStart: i === 0,
+            isEnd: i === numPoints - 1,
+          });
+        }
+        return waypoints;
+      }
+
+      // 4. Météo via Open-Meteo
+      async function getWeatherForWaypoints(waypoints) {
+        const results = [];
+        for (const wp of waypoints) {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${wp.lat}&longitude=${wp.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh`;
+          try {
+            const response = await fetch(url);
+            if (response.ok) {
+              const data = await response.json();
+              results.push({ ...wp, weather: data.current });
+            }
+          } catch (error) {
+            console.error("Erreur météo pour le point", wp, error);
+          }
+        }
+        return results;
+      }
+
+      /**
+       * FORMATAGE & UI (HELPER FUNCTIONS)
+       */
+
+      // Convertir le code WMO (Organisation Météorologique Mondiale) en icône FontAwesome
+      function getWeatherIconAndDesc(code, isDay) {
+        const codes = {
+          0: {
+            icon: isDay ? "fa-sun text-yellow-400" : "fa-moon text-slate-300",
+            desc: "Dégagé",
+          },
+          1: {
+            icon: isDay
+              ? "fa-cloud-sun text-blue-200"
+              : "fa-cloud-moon text-blue-200",
+            desc: "Principalement clair",
+          },
+          2: { icon: "fa-cloud text-slate-400", desc: "Partiellement nuageux" },
+          3: { icon: "fa-cloud text-slate-500", desc: "Couvert" },
+          45: { icon: "fa-smog text-slate-400", desc: "Brouillard" },
+          48: { icon: "fa-smog text-slate-400", desc: "Brouillard givrant" },
+          51: { icon: "fa-cloud-rain text-blue-300", desc: "Bruine légère" },
+          53: { icon: "fa-cloud-rain text-blue-400", desc: "Bruine modérée" },
+          55: {
+            icon: "fa-cloud-showers-heavy text-blue-500",
+            desc: "Bruine dense",
+          },
+          61: { icon: "fa-cloud-rain text-blue-400", desc: "Pluie faible" },
+          63: { icon: "fa-cloud-rain text-blue-500", desc: "Pluie modérée" },
+          65: {
+            icon: "fa-cloud-showers-heavy text-blue-600",
+            desc: "Pluie forte",
+          },
+          71: { icon: "fa-snowflake text-white", desc: "Neige faible" },
+          73: { icon: "fa-snowflake text-white", desc: "Neige modérée" },
+          75: { icon: "fa-snowflake text-white", desc: "Neige forte" },
+          95: { icon: "fa-cloud-bolt text-purple-400", desc: "Orage" },
+          96: {
+            icon: "fa-cloud-bolt text-purple-500",
+            desc: "Orage avec grêle",
+          },
+          99: {
+            icon: "fa-cloud-bolt text-purple-600",
+            desc: "Orage fort avec grêle",
+          },
+        };
+        return (
+          codes[code] || {
+            icon: "fa-circle-question text-slate-400",
+            desc: "Inconnu",
+          }
+        );
+      }
+
+      function formatDistance(meters) {
+        return (meters / 1000).toFixed(1) + " km";
+      }
+
+      function formatDuration(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+      }
+
+      // Afficher un message de statut
+      function showStatus(message, isError = false) {
+        const area = document.getElementById("statusArea");
+        area.classList.remove(
+          "hidden",
+          "bg-red-900/50",
+          "text-red-400",
+          "border",
+          "border-red-700",
+          "bg-blue-900/30",
+          "text-blue-400",
+        );
+
+        if (isError) {
+          area.classList.add(
+            "bg-red-900/50",
+            "text-red-400",
+            "border",
+            "border-red-700",
+          );
+          area.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-2"></i> ${message}`;
+        } else {
+          area.classList.add("bg-blue-900/30", "text-blue-400");
+          area.innerHTML = `<span class="loader mr-2"></span> ${message}`;
+        }
+      }
+
+      function hideStatus() {
+        document.getElementById("statusArea").classList.add("hidden");
+      }
+
+      // Créer l'icône Leaflet customisée avec la température
+      function createWeatherMarkerIcon(wpInfo) {
+        const temp = Math.round(wpInfo.weather.temperature_2m);
+        const weather = getWeatherIconAndDesc(
+          wpInfo.weather.weather_code,
+          wpInfo.weather.is_day,
+        );
+
+        let badgeColor = "bg-slate-800 border-slate-600";
+        if (wpInfo.isStart) badgeColor = "bg-emerald-900 border-emerald-500";
+        if (wpInfo.isEnd) badgeColor = "bg-rose-900 border-rose-500";
+
+        const html = `
+                <div class="relative flex flex-col items-center justify-center translate-y-[-50%]">
+                    <div class="flex items-center gap-1.5 px-2.5 py-1 ${badgeColor} border rounded-full shadow-lg text-white font-bold text-sm">
+                        <i class="fa-solid ${weather.icon}"></i>
+                        <span>${temp}°</span>
+                    </div>
+                    <div class="w-1 h-3 bg-slate-400 mt-1"></div>
+                    <div class="w-2 h-2 bg-slate-400 rounded-full"></div>
+                </div>
+            `;
+
+        return L.divIcon({
+          html: html,
+          className: "custom-weather-icon",
+          iconSize: [60, 50],
+          iconAnchor: [30, 50],
+          popupAnchor: [0, -50],
+        });
+      }
+
+      /**
+       * LOGIQUE PRINCIPALE
+       */
+      async function processRoute(e) {
+        e.preventDefault();
+
+        const startInput = document.getElementById("start").value;
+        const endInput = document.getElementById("end").value;
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        const btn = document.getElementById("submitBtn");
+
+        // Nettoyage de la carte
+        if (routeLayer) map.removeLayer(routeLayer);
+        weatherMarkers.forEach((m) => map.removeLayer(m));
+        weatherMarkers = [];
+        document.getElementById("routeInfo").classList.add("hidden");
+
+        try {
+          // Verrouillage UI
+          btn.disabled = true;
+          btn.classList.add("opacity-50", "cursor-not-allowed");
+
+          // 1. Géocodage
+          showStatus("Géocodage des adresses...");
+          const startCoords = await geocode(startInput);
+          const endCoords = await geocode(endInput);
+
+          // 2. Récupération de l'itinéraire
+          showStatus("Calcul de l'itinéraire (OSRM)...");
+          const route = await getRoute(startCoords, endCoords, mode);
+
+          // 3. Echantillonnage et météo
+          showStatus("Récupération des données météorologiques...");
+          const waypoints = extractWaypoints(
+            route.geometry,
+            POINTS_METEO_COUNT,
+          );
+          const weatherData = await getWeatherForWaypoints(waypoints);
+
+          // 4. Affichage de la ligne de trajet
+          const geojsonObj = {
+            type: "Feature",
+            properties: {},
+            geometry: route.geometry,
+          };
+
+          routeLayer = L.geoJSON(geojsonObj, {
+            style: {
+              color: "#3b82f6", // Bleu Tailwind
+              weight: 6,
+              opacity: 0.8,
+              lineCap: "round",
+              lineJoin: "round",
+            },
+          }).addTo(map);
+
+          // Centrer la carte sur l'itinéraire avec un padding
+          map.fitBounds(routeLayer.getBounds(), { padding: [50, 50] });
+
+          // 5. Affichage des marqueurs météo
+          weatherData.forEach((wp, index) => {
+            const weatherInfo = getWeatherIconAndDesc(
+              wp.weather.weather_code,
+              wp.weather.is_day,
+            );
+
+            let labelType = "Point de passage";
+            if (wp.isStart) labelType = "Départ";
+            if (wp.isEnd) labelType = "Arrivée";
+
+            const popupContent = `
+                        <div class="text-center min-w-[150px]">
+                            <p class="text-xs text-slate-400 uppercase tracking-widest font-bold mb-2">${labelType}</p>
+                            <div class="flex items-center justify-center gap-3 mb-2">
+                                <i class="fa-solid ${weatherInfo.icon} text-3xl"></i>
+                                <div class="text-left">
+                                    <span class="text-2xl font-bold">${Math.round(wp.weather.temperature_2m)}°C</span>
+                                    <p class="text-xs text-slate-300 capitalize">${weatherInfo.desc}</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-xs text-slate-300 bg-slate-800 p-2 rounded mt-2">
+                                <div title="Ressenti">
+                                    <i class="fa-solid fa-temperature-half text-slate-500 mr-1"></i> ${Math.round(wp.weather.apparent_temperature)}°C
+                                </div>
+                                <div title="Vent">
+                                    <i class="fa-solid fa-wind text-slate-500 mr-1"></i> ${Math.round(wp.weather.wind_speed_10m)} km/h
+                                </div>
+                                <div title="Précipitations">
+                                    <i class="fa-solid fa-droplet text-slate-500 mr-1"></i> ${wp.weather.precipitation} mm
+                                </div>
+                                <div title="Humidité">
+                                    <i class="fa-solid fa-water text-slate-500 mr-1"></i> ${wp.weather.relative_humidity_2m}%
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+            const marker = L.marker([wp.lat, wp.lon], {
+              icon: createWeatherMarkerIcon(wp),
+            })
+              .bindPopup(popupContent, { className: "weather-popup" })
+              .addTo(map);
+
+            weatherMarkers.push(marker);
+
+            // Ouvrir la popup du premier et dernier point par défaut
+            if (wp.isStart || wp.isEnd) {
+              // Petit délai pour permettre à la carte de se centrer correctement
+              setTimeout(() => marker.openPopup(), 500);
+            }
+          });
+
+          // 6. Mise à jour de l'UI
+          document.getElementById("infoDistance").textContent = formatDistance(
+            route.distance,
+          );
+          document.getElementById("infoDuration").textContent = formatDuration(
+            route.duration,
+          );
+          document.getElementById("routeInfo").classList.remove("hidden");
+          document.getElementById("routeInfo").classList.add("flex");
+
+          hideStatus();
+        } catch (error) {
+          console.error(error);
+          showStatus(error.message, true);
+        } finally {
+          // Déverrouillage UI
+          btn.disabled = false;
+          btn.classList.remove("opacity-50", "cursor-not-allowed");
+          btn.innerHTML = `<span>Calculer l'itinéraire</span>`;
+        }
+      }
+
+      // Lancement initial
+      window.addEventListener("DOMContentLoaded", () => {
+        initMap();
+        document
+          .getElementById("routeForm")
+          .addEventListener("submit", processRoute);
+      });
+    </script>
+  </body>
+</html>

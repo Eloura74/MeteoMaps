@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-content: center;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #020617;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+}
+
+/* Custom Scrollbar for a cleaner look */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Glassmorphism & Grey Elegant Effects */
+.glass-panel {
+  @apply bg-slate-900/90 backdrop-blur-xl border border-white/10 shadow-xl;
+}
+
+.glow-grey {
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
+}
+
+/* Leaflet Overrides */
+.weather-popup .leaflet-popup-content-wrapper {
+  @apply glass-panel text-slate-100 rounded-lg p-1;
+}
+
+.weather-popup .leaflet-popup-tip {
+  @apply bg-slate-900/90;
+}
+
+.custom-weather-icon {
+  background: transparent;
+  border: none;
+}
+
+/* Custom Scrollbar for Horizontal Lists */
+.custom-scrollbar::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3); /* Slate 400 */
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
