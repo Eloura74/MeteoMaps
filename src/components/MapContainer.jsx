@@ -79,10 +79,18 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
 
       L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
 
+      // Hack for Leaflet container size zero during React flex layout
+      setTimeout(() => {
+        if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+      }, 300);
+
       // Enregistre la fonction de ciblage vers le parent
       if (onRegisterCenterFunction) {
         onRegisterCenterFunction((coords) => {
-          mapInstanceRef.current.flyTo(coords, 16, { animate: true, duration: 1 });
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.invalidateSize();
+            mapInstanceRef.current.flyTo(coords, 16, { animate: true, duration: 1 });
+          }
         });
       }
     }
@@ -97,8 +105,11 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
 
   // Live GPS Tracking Render
   useEffect(() => {
+    console.log("🗺️ MapContainer.jsx -> GPS Tracker Update", { position, isTracking, accuracy, hasMap: !!mapInstanceRef.current });
+    
     if (!mapInstanceRef.current || !position || !isTracking) {
       if (userMarkerRef.current) {
+        console.log("🗺️ Suppression du marqueur GPS");
         mapInstanceRef.current.removeLayer(userMarkerRef.current);
         userMarkerRef.current = null;
       }
@@ -110,22 +121,26 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
     }
 
     const posLatLng = [position.lat, position.lng];
+    console.log("🗺️ Création/Update du marqueur GPS à :", posLatLng);
 
     // Create or update marker
     if (!userMarkerRef.current) {
-      // Create user dot
+      // Create user dot (avec styles inlines stricts pour bypasser la purge éventuelle de Tailwind css sur les strings injectées)
       const userIcon = L.divIcon({
         className: 'user-gps-marker',
-        html: `<div class="relative w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-                 <div class="absolute inset-0 rounded-full bg-blue-400 animate-ping opacity-75"></div>
+        html: `<div style="position:relative; width:20px; height:20px; border-radius:50%; background-color:#3b82f6; border:3px solid white; box-shadow: 0 0 15px rgba(59,130,246,0.8);">
+                 <div style="position:absolute; top:0; left:0; right:0; bottom:0; border-radius:50%; background-color:#60a5fa; animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.75;"></div>
                </div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
       });
       userMarkerRef.current = L.marker(posLatLng, { icon: userIcon, zIndexOffset: 1000 }).addTo(mapInstanceRef.current);
       
       // Auto-center on first fix
-      mapInstanceRef.current.flyTo(posLatLng, 16, { animate: true, duration: 1 });
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+        mapInstanceRef.current.flyTo(posLatLng, 15, { animate: true, duration: 1 });
+      }
     } else {
       userMarkerRef.current.setLatLng(posLatLng);
     }

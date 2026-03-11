@@ -174,6 +174,36 @@ const useRouteStore = create((set, get) => ({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  },
+
+  saveRouteToCloud: async (userId, title = 'Mon Itinéraire MeteoMap') => {
+    const { routes, activeRouteIndex, waypoints, routeScore } = get();
+    const route = routes[activeRouteIndex];
+    if (!route || !route.geometry || !userId) return null;
+
+    set({ loading: true, status: 'Sauvegarde dans le cloud...' });
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data, error } = await supabase.from('saved_routes').insert([{
+        user_id: userId,
+        title,
+        geometry: route.geometry,
+        waypoints: waypoints.filter(w => w.place), // Nettoyage des waypoints vides
+        weather_score: routeScore,
+        is_public: true // Rendre semi-public pour le partage par URL
+      }]).select();
+
+      if (error) throw error;
+      set({ status: 'Itinéraire sauvegardé avec succès !' });
+      return data[0];
+    } catch (err) {
+      console.error("Erreur Sauvegarde Cloud :", err);
+      set({ status: 'Erreur lors de la sauvegarde.' });
+      return null;
+    } finally {
+      set({ loading: false });
+      setTimeout(() => set({ status: '' }), 3000); // Purge du message de statut après 3s
+    }
   }
 }));
 

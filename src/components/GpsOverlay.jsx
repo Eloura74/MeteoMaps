@@ -12,6 +12,7 @@ const GpsOverlay = ({ onCenterRequest }) => {
   }, []); */
 
   const handleToggleTracking = () => {
+    console.log("🔥 BOUTON GPS CLIQUÉ !", { isTracking, navGeo: !!navigator.geolocation });
     if (isTracking) {
       stopTracking();
     } else {

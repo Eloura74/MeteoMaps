@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Milestone, Map as MapIcon, Loader2, Download, ChevronUp, ChevronDown } from 'lucide-react';
+import { Milestone, Map as MapIcon, Loader2, Download, ChevronUp, ChevronDown, User, LogOut } from 'lucide-react';
 import MapContainer from './components/MapContainer';
 import ElevationProfile from './components/ElevationProfile';
 import SearchPanel from './features/routing/SearchPanel';
@@ -8,6 +8,9 @@ import useRouteStore from './store/useRouteStore';
 import { getGradeColor } from './utils/WeatherScorer';
 import GpsOverlay from './components/GpsOverlay';
 import useLocationStore from './store/useLocationStore';
+import AuthModal from './components/AuthModal';
+import useAuthStore from './store/useAuthStore';
+import SaveRouteButton from './components/SaveRouteButton';
 
 function App() {
   const {
@@ -29,7 +32,10 @@ function App() {
   } = useRouteStore();
 
   const { isTracking, position } = useLocationStore();
+  const { user, isInitialized, initialize, signOut } = useAuthStore();
+  
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const mapCenterRef = useRef(null);
   const activeRoute = routes[activeRouteIndex];
 
@@ -40,6 +46,11 @@ function App() {
       setIsMobileExpanded(false);
     }
   }, [routes]);
+
+  // Initialisation Authentification Supabase
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
 
   const handleCenterMap = (coords) => {
     if (mapCenterRef.current) {
@@ -124,6 +135,8 @@ function App() {
                 </div>
              </div>
 
+             <SaveRouteButton onRequireAuth={() => setIsAuthModalOpen(true)} />
+
              <button onClick={exportGPX} className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-white/10 flex items-center justify-center gap-2 transition-colors shadow-inner">
                  <Download size={14} /> <span className="text-[10px] font-black uppercase tracking-widest">Exporter le tracé (GPX)</span>
              </button>
@@ -146,7 +159,7 @@ function App() {
       {/* Main Map Area */}
       <main className="absolute inset-0 md:relative md:flex-1 bg-slate-950 flex flex-col z-0">
         {/* Map Content - 50% hauteur sur mobile, full width sur desktop */}
-        <div className={`transition-all duration-300 ease-in-out absolute inset-0 md:static ${isMobileExpanded ? 'h-[55vh]' : 'h-[100vh]'} md:h-auto`}>
+        <div className={`transition-all duration-300 ease-in-out absolute inset-0 md:static md:flex-1 md:h-full w-full ${isMobileExpanded ? 'h-[55vh]' : 'h-[100vh]'} z-10`}>
           <div className="h-full w-full relative">
             <MapContainer 
               routes={routes} 
@@ -156,23 +169,43 @@ function App() {
               pois={pois}
               onRegisterCenterFunction={(fn) => mapCenterRef.current = fn}
             />
-            <GpsOverlay onCenterRequest={handleCenterMap} />
           </div>
         </div>
 
-        {!activeRoute && !loading && (
-          <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center p-8 md:p-12 text-center bg-slate-950/20 backdrop-blur-[2px]">
-            <div className="max-w-xs md:max-w-md bg-slate-900/80 backdrop-blur-xl p-8 md:p-10 rounded-2xl md:rounded-xl border border-white/10 space-y-4 md:space-y-6 shadow-2xl transform hover:scale-[1.01] transition-transform duration-500 mb-[30vh] md:mb-0">
-               <div className="w-12 h-12 md:w-16 md:h-16 bg-white/5 rounded-full md:rounded-lg flex items-center justify-center text-slate-400 mx-auto border border-white/5">
-                  <MapIcon size={24} strokeWidth={1.5} className="md:w-7 md:h-7" />
-               </div>
-               <div className="space-y-2">
-                 <h2 className="text-lg md:text-xl font-black text-white tracking-widest uppercase">SYSTÈME PRÊT</h2>
-                 <p className="text-[10px] md:text-xs text-slate-400 leading-relaxed font-semibold uppercase tracking-wide">Veuillez définir vos coordonnées pour initialiser l'analyse climat-trajet.</p>
-               </div>
-            </div>
+        {/* Panneau d'accueil supprimé à la demande de l'utilisateur pour une carte directe */}
+
+        {/* HUD GPS (Toujours visible, par dessus tout) */}
+        <GpsOverlay onCenterRequest={handleCenterMap} />
+
+        {/* Auth Badge (Top Left) */}
+        {isInitialized && (
+          <div className="absolute top-3 left-3 md:top-6 md:left-6 z-[1000]">
+            {user ? (
+              <button 
+                onClick={signOut}
+                className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-full pl-3 pr-4 py-2 hover:bg-slate-800 transition-colors shadow-2xl flex items-center gap-2 text-sm text-slate-300 group"
+                title="Se déconnecter"
+              >
+                <div className="bg-emerald-500/20 text-emerald-400 p-1.5 rounded-full group-hover:bg-red-500/20 group-hover:text-red-400 transition-colors">
+                  <User size={14} className="group-hover:hidden" />
+                  <LogOut size={14} className="hidden group-hover:block" />
+                </div>
+                <span className="font-semibold truncate max-w-[120px]">{user.email?.split('@')[0]}</span>
+              </button>
+            ) : (
+              <button 
+                onClick={() => setIsAuthModalOpen(true)}
+                className="bg-blue-600/90 hover:bg-blue-500 backdrop-blur-xl border border-blue-400/30 rounded-full px-4 py-2 md:py-2.5 shadow-2xl shadow-blue-900/20 flex items-center gap-2 text-sm font-bold text-white transition-all transform hover:scale-105"
+              >
+                <User size={16} />
+                <span>Connexion</span>
+              </button>
+            )}
           </div>
         )}
+
+        {/* Modal d'Authentification */}
+        <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
       </main>
     </div>
   );
