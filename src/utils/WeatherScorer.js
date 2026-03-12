@@ -17,9 +17,8 @@ export function calculateRouteScore({ distance, totalAscent, weatherPoints }) {
     // 1. Pénalité de Terrain (D+)
     if (distance > 0 && totalAscent > 0) {
         const distanceKm = distance / 1000;
-        const ascentPerKm = totalAscent / distanceKm; // Mètres montés par km en moyenne
-        // Ex: 10m/km = plat (0 pénalité). 25m/km = montagnard (-12.5 pts)
-        score -= ascentPerKm * 0.5;
+        const ascentPerKm = totalAscent / distanceKm; 
+        score -= Math.min(40, ascentPerKm * 0.5); // Cap à 40 pts de pénalité max
     }
     
     // 2. Pénalités Météorologiques
@@ -151,6 +150,9 @@ export function getGradeColor(grade) {
  * Calcule l'impact physique ( Effort / Watts / Temps )
  */
 export function calculatePhysicalEffort({ distance, totalAscent, weatherPoints, averageSpeedKmh = 20 }) {
+    if (!distance || distance <= 0 || !weatherPoints || weatherPoints.length < 2) {
+        return { correctedDuration: 0, calories: 0, avgWatts: 0, penaltyMinutes: 0 };
+    }
     // Constantes physiques simplifiées (base cycliste moyen)
     const mass = 85; 
     const g = 9.81;
@@ -195,13 +197,13 @@ export function calculatePhysicalEffort({ distance, totalAscent, weatherPoints, 
         totalSecondsWithPenalty += segmentTime * cappedPenalty;
     }
 
-    const totalKcal = totalJoules / 4184 / 0.24; // divisé par rendement humain (24%)
+    const totalKcal = totalJoules / 4184 / 0.24; 
 
     return {
-        correctedDuration: Math.round(totalSecondsWithPenalty),
-        calories: Math.round(totalKcal),
-        avgWatts: Math.round(totalJoules / totalSecondsNormal),
-        penaltyMinutes: Math.round((totalSecondsWithPenalty - totalSecondsNormal) / 60)
+        correctedDuration: Math.round(totalSecondsWithPenalty) || Math.round(totalSecondsNormal),
+        calories: Math.round(totalKcal) || 0,
+        avgWatts: Math.round(totalJoules / Math.max(1, totalSecondsNormal)) || 0,
+        penaltyMinutes: Math.round((totalSecondsWithPenalty - totalSecondsNormal) / 60) || 0
     };
 }
 
@@ -253,4 +255,142 @@ export function getSolarExposure(lat, lng, timestamp, slope, aspect) {
     return 'Ensoleillé';
 }
 
+/**
+ * Le Narrateur IA : Génère un briefing en langage naturel basé sur les données
+ */
+export function generateRouteBriefing({ score, weatherPoints, effort, mode }) {
+    if (!score || !weatherPoints || weatherPoints.length === 0) return null;
 
+    let briefing = "";
+    const mainConditions = weatherPoints.map(p => p.weather?.weather_code || 0);
+    const isRainy = mainConditions.some(c => c >= 51);
+    const isStormy = mainConditions.some(c => c >= 95);
+    const avgTemp = weatherPoints.reduce((acc, p) => acc + (p.weather?.temperature_2m || 0), 0) / weatherPoints.length;
+    
+    // 1. Synthèse globale
+    if (score.value >= 80) briefing += "Conditions idéales ! ";
+    else if (score.value >= 60) briefing += "Itinéraire correct, mais quelques points d'attention. ";
+    else briefing += "Parcours exigeant, prudence recommandée. ";
+
+    // 2. Analyse Vent & Effort (Ignoré en voiture)
+    if (mode !== 'driving') {
+        if (effort.penaltyMinutes > 15) {
+            briefing += `Le vent de face va sérieusement durcir l'effort (+${effort.penaltyMinutes} min sur votre temps habituel). `;
+        } else if (weatherPoints.some(p => p.aero?.tailwind > 15)) {
+            briefing += "Profitez d'un bel appui du vent de dos pendant une partie du trajet. ";
+        }
+    } else {
+        // Mode voiture : focus sur la visibilité/sécurité
+        if (weatherPoints.some(p => p.weather?.wind_speed_10m > 40)) {
+            briefing += "Fortes rafales de vent : attention à la prise au vent de votre véhicule. ";
+        }
+    }
+
+    // 3. Analyse Météo
+    if (isStormy) briefing += "⚠️ Attention : Risques d'orages détectés sur votre passage ! ";
+    else if (isRainy) briefing += "Prévoyez une conduite prudente, la pluie s'invitera sur le parcours. ";
+    
+    if (avgTemp > 30) briefing += mode === 'driving' ? "Forte chaleur : vérifiez la climatisation et restez hydraté. " : "Forte chaleur prévue : assurez votre hydratation. ";
+    else if (avgTemp < 5) briefing += "Températures froides : attention aux risques de verglas localisés. ";
+
+    // 4. Analyse Solaire
+    const shadowSegments = weatherPoints.filter(p => p.exposition === 'Ombre').length;
+    if (shadowSegments > weatherPoints.length * 0.5) {
+        briefing += "Le parcours sera majoritairement ombragé par le relief. ";
+    } else if (weatherPoints.some(p => p.exposition === 'Nuit')) {
+        briefing += "Notez qu'une partie du trajet s'effectuera à la nuit tombée. ";
+    }
+
+    // 5. Nutrition & Ravitaillement (Epic 14)
+    // Le plan de ravitaillement est maintenant calculé en amont et passé via 'effort.fueling'
+    if (effort.fueling && effort.fueling.recommendation) {
+        briefing += effort.fueling.recommendation;
+    }
+
+    return briefing;
+}
+
+/**
+ * Calcule un plan de ravitaillement basé sur l'effort et les POIs
+ */
+export function calculateFuelingPlan({ calories, correctedDuration, pois, mode }) {
+    if (!calories || !pois) return null;
+
+    if (mode === 'driving') {
+        return {
+            waterNeededLiters: 0,
+            recommendation: "Trajet motorisé : prévoyez simplement une boisson de confort.",
+            waterPoisCount: 0,
+            shelterPoisCount: 0
+        };
+    }
+
+    const waterPois = pois.filter(p => p.category === 'water');
+    const shelterPois = pois.filter(p => p.category === 'shelter');
+    
+    // Règle de base : 500ml d'eau par heure d'effort intense (ou tous les 600 kcal)
+    const waterNeededLiters = (calories / 600) * 0.5;
+    
+    let recommendation = "";
+    if (waterNeededLiters > 1.5 && waterPois.length > 0) {
+        recommendation = `Prévoyez d'importantes réserves d'eau (${waterNeededLiters.toFixed(1)}L estimé). `;
+        const firstWater = waterPois[0];
+        recommendation += `Premier point d'eau détecté : "${firstWater.name}". `;
+    } else if (waterNeededLiters > 0.5 && waterPois.length === 0) {
+        recommendation = "Attention : Aucun point d'eau potable détecté sur le tracé. Partez avec vos réserves. ";
+    }
+
+    return {
+        waterNeededLiters,
+        recommendation,
+        waterPoisCount: waterPois.length,
+        shelterPoisCount: shelterPois.length
+    };
+}
+
+/**
+ * Formate une durée en secondes en une chaîne HHhMM
+ * @param {number} seconds 
+ * @returns {string}
+ */
+export function formatDuration(seconds) {
+    if (!seconds || seconds <= 0) return "0min";
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (h > 0) return `${h}h${m.toString().padStart(2, '0')}`;
+    return `${m}min`;
+}
+
+/**
+ * Calcule la distance approximative (en mètres) entre deux points GPS (Formule Haversine simplifiée)
+ */
+export function getDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; // Rayon de la terre en mètres
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+}
+
+/**
+ * Calcule la distance totale d'un itinéraire basé sur ses coordonnées
+ * @param {Array} coordinates - Tableau de [lng, lat]
+ * @returns {number} Distance totale en mètres
+ */
+export function calculateTotalDistance(coordinates) {
+    if (!coordinates || coordinates.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < coordinates.length; i++) {
+        const [lon1, lat1] = coordinates[i - 1];
+        const [lon2, lat2] = coordinates[i];
+        total += getDistance(lat1, lon1, lat2, lon2);
+    }
+    return total;
+}

@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { searchPlaces, getRoute, sampleRoutePoints, getWeatherData, getElevationData } from '../services/api';
 import { getVitalPOIs } from '../services/overpass';
-import { calculateRouteScore, getScoreGrade, calculateBearing, calculateRelativeWind, calculatePhysicalEffort, getSolarExposure } from '../utils/WeatherScorer';
+import { calculateRouteScore, getScoreGrade, calculateBearing, calculateRelativeWind, calculatePhysicalEffort, getSolarExposure, generateRouteBriefing, calculateTotalDistance, calculateFuelingPlan } from '../utils/WeatherScorer';
 import { supabase } from '../lib/supabase';
+import useAuthStore from './useAuthStore';
 
 const useRouteStore = create((set, get) => ({
   // State
@@ -20,11 +21,19 @@ const useRouteStore = create((set, get) => ({
   routeScore: null,
   routeScores: [], // Scores pour toutes les alternatives [ { value, grade, label } ]
   physicAnalysis: null, // Données d'effort (Watts, Calories, Temps Corrigé)
+  routeBriefing: null, // Synthèse textuelle
   loading: false,
   status: '',
   departureDate: new Date().toISOString().slice(0, 16),
   weatherAlerts: [],
   userRoutes: [], // Bibliothèque des trajets de l'utilisateur
+  publicRoutes: [], // Flux communautaire public
+  timeOptimization: [], // Scores prédictifs pour les 12 prochains créneaux
+  ghostModeActive: false,
+  ghostPosition: null, // [lat, lng]
+  activeView: 'standard', // État centralisé de la vue (Epic 32)
+  isLoading: false, // New state variable
+  error: null, // New state variable
 
   // Setters
   setMode: (mode) => set({ mode }),
@@ -32,6 +41,17 @@ const useRouteStore = create((set, get) => ({
   setActiveRouteIndex: (index) => {
     set({ activeRouteIndex: index });
     get().calculateRouteDetails(index);
+  },
+  setActiveView: (view) => set({ activeView: view }), // New setter
+
+  // Sync Cloud (V6.2)
+  syncCloudData: async () => {
+    const { fetchUserRoutes, fetchPublicRoutes } = get();
+    const userId = useAuthStore.getState().user?.id;
+    await Promise.all([
+      fetchUserRoutes(userId), 
+      fetchPublicRoutes()
+    ]);
   },
 
   // Waypoints API
@@ -132,7 +152,25 @@ const useRouteStore = create((set, get) => ({
           weatherPoints: enrichedWeather,
           averageSpeedKmh: get().mode === 'bike' ? 22 : get().mode === 'foot' ? 4.5 : 20
       });
+
+      // Calcul du plan de ravitaillement (Epic 14)
+      const fueling = calculateFuelingPlan({
+          calories: physical.calories,
+          correctedDuration: physical.correctedDuration,
+          pois: poisData
+      });
+      physical.fueling = fueling;
+
       set({ physicAnalysis: physical });
+
+      // Génération du Briefing IA
+      const briefing = generateRouteBriefing({
+          score: get().routeScore,
+          weatherPoints: enrichedWeather,
+          effort: physical,
+          mode: get().mode
+      });
+      set({ routeBriefing: briefing });
 
       // Analyze Weather Alerts
       const alerts = [];
@@ -146,6 +184,9 @@ const useRouteStore = create((set, get) => ({
       });
       set({ weatherAlerts: alerts });
       
+      // Lancement de l'optimisation temporelle en arrière-plan
+      get().calculateTimeOptimization();
+
       set({ status: '' });
     } catch (error) {
       console.error(error);
@@ -245,9 +286,13 @@ const useRouteStore = create((set, get) => ({
         user_id: userId,
         title,
         geometry: route.geometry,
-        waypoints: waypoints.filter(w => w.place), // Nettoyage des waypoints vides
-        weather_score: routeScore,
-        is_public: true // Rendre semi-public pour le partage par URL
+        waypoints: waypoints.filter(w => w.place), 
+        weather_score: { 
+            ...routeScore, 
+            distance: route.distance, 
+            ascent: get().totalAscent 
+        },
+        is_public: true 
       }]).select();
 
       if (error) throw error;
@@ -275,17 +320,17 @@ const useRouteStore = create((set, get) => ({
       if (error) throw error;
       if (!data) throw new Error("Route introuvable");
 
-      // Reconstruction de l'état
       set({
         waypoints: data.waypoints,
         routes: [{
-          distance: data.weather_score?.distance || 0,
-          duration: 0, // Optionnel, on n'a pas sauvegardé la durée exacte, on peut l'estimer ou l'ignorer
+          distance: data.weather_score?.distance || calculateTotalDistance(data.geometry.coordinates),
+          duration: data.weather_score?.duration || 0, 
           geometry: data.geometry,
-          summary: data.title
+          summary: data.title || 'Itinéraire Partagé'
         }],
         activeRouteIndex: 0,
         routeScore: data.weather_score,
+        totalAscent: data.weather_score?.ascent || 0,
         status: 'Itinéraire chargé !',
       });
 
@@ -341,7 +386,68 @@ const useRouteStore = create((set, get) => ({
     } finally {
       setTimeout(() => set({ status: '' }), 3000);
     }
-  }
+  },
+
+  fetchPublicRoutes: async () => {
+    set({ loading: true, status: 'Exploration de la communauté...' });
+    try {
+      const { data, error } = await supabase
+        .from('saved_routes')
+        .select('*')
+        .eq('is_public', true)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+      set({ publicRoutes: data || [] });
+    } catch (err) {
+      console.error("Erreur Fetch Public Routes :", err);
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  calculateTimeOptimization: async () => {
+    const { routes, activeRouteIndex, departureDate } = get();
+    const route = routes[activeRouteIndex];
+    if (!route) return;
+
+    const baseDate = new Date(departureDate);
+    const slots = [];
+    
+    // On calcule pour les 12 prochaines heures (par pas de 1h)
+    for (let i = 0; i < 12; i++) {
+        const slotDate = new Date(baseDate.getTime() + (i * 60 * 60 * 1000));
+        const slotTs = Math.floor(slotDate.getTime() / 1000);
+        
+        // Échantillonnage léger pour la prédiction temporelle
+        const sampled = sampleRoutePoints(route, 6);
+        const weatherSlots = await getWeatherData(sampled, slotTs);
+        const score = calculateRouteScore({ 
+            distance: route.distance, 
+            totalAscent: get().totalAscent, 
+            weatherPoints: weatherSlots 
+        });
+
+        slots.push({
+            time: slotDate.toISOString(),
+            score: score,
+            grade: getScoreGrade(score)
+        });
+    }
+
+    set({ timeOptimization: slots });
+  },
+
+  ghostModeActive: false,
+  ghostPosition: null,
+
+  toggleGhostMode: (active) => set({ 
+    ghostModeActive: active,
+    ghostPosition: active ? null : null 
+  }),
+  
+  setGhostPosition: (pos) => set({ ghostPosition: pos })
 }));
 
 export default useRouteStore;

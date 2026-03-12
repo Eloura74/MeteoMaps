@@ -3,7 +3,9 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Layers, Globe, Map as MapIcon, CloudRain, Wind } from 'lucide-react';
 import useLocationStore from '../store/useLocationStore';
+import useRouteStore from '../store/useRouteStore';
 import WindLayer from './WindLayer';
+import RainRadar from './RainRadar';
 
 // Fix for default marker icons in Leaflet with React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -18,19 +20,22 @@ const VIEWS = {
     name: 'Standard',
     icon: MapIcon,
     url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap &copy; CartoDB'
+    attribution: '&copy; OpenStreetMap &copy; CartoDB',
+    maxNativeZoom: 18
   },
   satellite: {
     name: 'Satellite',
     icon: Globe,
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EBP, and the GIS User Community'
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EBP, and the GIS User Community',
+    maxNativeZoom: 17
   },
   terrain: {
     name: 'Topographie',
-    icon: Globe, // Changed from Activity as Activity was removed from imports
+    icon: Globe, 
     url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)'
+    attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)',
+    maxNativeZoom: 16
   }
 };
 
@@ -58,23 +63,28 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
   const routeLayerRef = useRef(null);
   const markersRef = useRef([]);
   const poiMarkersRef = useRef([]);
-  const radarLayerRef = useRef(null);
   const userMarkerRef = useRef(null);
   const userAccuracyRingRef = useRef(null);
+  const ghostMarkerRef = useRef(null);
   
-  const [activeView, setActiveView] = useState('standard');
   const [radarEnabled, setRadarEnabled] = useState(false);
   const [windEnabled, setWindEnabled] = useState(false);
   const { position, isTracking, accuracy } = useLocationStore();
+  const { 
+    activeView, 
+    ghostModeActive, 
+    ghostPosition,
+    setGhostPosition 
+  } = useRouteStore();
 
   useEffect(() => {
     if (!mapInstanceRef.current && mapRef.current) {
       mapInstanceRef.current = L.map(mapRef.current, {
-        zoomControl: false,
         attributionControl: false
       }).setView([46.2276, 2.2137], 6);
 
       layerRef.current = L.tileLayer(VIEWS.standard.url, {
+        maxNativeZoom: 18,
         maxZoom: 20,
         attribution: VIEWS.standard.attribution
       }).addTo(mapInstanceRef.current);
@@ -100,10 +110,72 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
 
   // Update TileLayer when view changes
   useEffect(() => {
-    if (mapInstanceRef.current && layerRef.current) {
-      layerRef.current.setUrl(VIEWS[activeView].url);
+    if (mapInstanceRef.current) {
+      if (layerRef.current) {
+        mapInstanceRef.current.removeLayer(layerRef.current);
+      }
+      
+      const config = VIEWS[activeView] || VIEWS.standard;
+      layerRef.current = L.tileLayer(config.url, {
+        maxNativeZoom: config.maxNativeZoom || 18,
+        maxZoom: 20,
+        attribution: config.attribution
+      }).addTo(mapInstanceRef.current);
     }
   }, [activeView]);
+
+  // Ghost Mode Animation & Marker Management
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    // Reset periodic
+    if (!ghostModeActive) {
+      if (ghostMarkerRef.current) {
+        mapInstanceRef.current.removeLayer(ghostMarkerRef.current);
+        ghostMarkerRef.current = null;
+      }
+      setGhostPosition(null);
+      return;
+    }
+
+    // Initialize Marker if needed
+    if (!ghostMarkerRef.current) {
+      const ghostIcon = L.divIcon({
+        html: `<div style="width:40px; height:40px; background:rgba(255,255,255,0.1); backdrop-filter:blur(12px); border-radius:50%; border:2px solid rgba(255,255,255,0.4); display:flex; align-items:center; justify-center; color:white; box-shadow:0 0 20px rgba(255,255,255,0.3); animation: pulse 2s infinite;">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/><path d="M9 10h.01"/><path d="M15 10h.01"/></svg>
+               </div>`,
+        className: 'ghost-marker-div',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+      });
+      ghostMarkerRef.current = L.marker([0, 0], { icon: ghostIcon, zIndexOffset: 2000 }).addTo(mapInstanceRef.current);
+    }
+
+    let interval;
+    if (routes[activeRouteIndex]?.geometry?.coordinates) {
+      const coords = routes[activeRouteIndex].geometry.coordinates;
+      let step = 0;
+      
+      interval = setInterval(() => {
+        if (step >= coords.length) {
+          step = 0;
+        }
+        const point = coords[step];
+        const newPos = [point[1], point[0]];
+        
+        if (ghostMarkerRef.current) {
+          ghostMarkerRef.current.setLatLng(newPos);
+        }
+        setGhostPosition(newPos);
+        
+        step += Math.max(1, Math.floor(coords.length / 120)); // Vitesse de preview (boucle en ~6s)
+      }, 50);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [ghostModeActive, routes, activeRouteIndex, setGhostPosition]);
 
   // Live GPS Tracking Render
   useEffect(() => {
@@ -212,32 +284,8 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
     }
   }, [routes, activeRouteIndex, activeView, onRouteSelect]);
 
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    
-    if (radarEnabled) {
-      fetch('https://api.rainviewer.com/public/weather-maps.json')
-        .then(res => res.json())
-        .then(data => {
-          if (!data || !data.radar || !data.radar.past) return;
-          const past = data.radar.past;
-          const latestTs = past[past.length - 1].path; // get latest past frame
-          const url = `https://tilecache.rainviewer.com${latestTs}/256/{z}/{x}/{y}/2/1_1.png`;
-          
-          radarLayerRef.current = L.tileLayer(url, {
-            opacity: 0.5,
-            zIndex: 10,
-            attribution: 'Radar &copy; RainViewer'
-          }).addTo(mapInstanceRef.current);
-        })
-        .catch(err => console.error("Error fetching RainViewer API:", err));
-    } else {
-      if (radarLayerRef.current) {
-        mapInstanceRef.current.removeLayer(radarLayerRef.current);
-        radarLayerRef.current = null;
-      }
-    }
-  }, [radarEnabled]);
+  // RainRadar is now a separate component rendering its own TileLayer
+
 
   useEffect(() => {
     if (mapInstanceRef.current && weatherPoints.length > 0) {
@@ -305,47 +353,52 @@ const MapContainer = ({ routes = [], activeRouteIndex = 0, onRouteSelect, weathe
         weatherPoints={weatherPoints} 
         enabled={windEnabled} 
       />
+
+      <RainRadar map={mapInstanceRef.current} enabled={radarEnabled} />
       
       {/* HUD Layer Control */}
-      <div className="absolute top-3 right-3 md:top-6 md:right-6 z-[1000] flex flex-col gap-2">
-        <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-lg p-1.5 shadow-2xl flex flex-col gap-1">
+      <div className="absolute top-6 right-6 z-[1000] flex flex-col gap-3">
+        <div className="bg-zinc-950/60 backdrop-blur-3xl border border-white/10 rounded-2xl p-2 shadow-2xl flex flex-col gap-1.5 min-w-[50px]">
           {Object.entries(VIEWS).map(([key, view]) => {
             const Icon = view.icon;
             return (
               <button
                 key={key}
-                onClick={() => setActiveView(key)}
-                className={`flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group ${activeView === key ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}
+                onClick={() => useRouteStore.getState().setActiveView(key)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-300 group relative ${activeView === key ? 'bg-zinc-700 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/5'}`}
                 title={view.name}
               >
-                <Icon size={16} className={activeView === key ? 'scale-110' : 'group-hover:scale-110 transition-transform'} />
-                <span className="text-[10px] font-black uppercase tracking-widest pr-2 hidden md:block">
+                <Icon size={18} className={activeView === key ? 'scale-110' : 'group-hover:scale-110 transition-transform'} />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] pr-2 hidden lg:block">
                   {view.name}
                 </span>
+                {activeView === key && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-blue-500 rounded-full" />
+                )}
               </button>
             );
           })}
           
-          <div className="h-px w-full bg-white/10 my-1"></div>
+          <div className="h-px w-full bg-white/5 my-1"></div>
           
           <button
             onClick={() => setRadarEnabled(!radarEnabled)}
-            className={`flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group ${radarEnabled ? 'bg-blue-900/40 text-blue-400' : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}
-            title="Radar Pluie (RainViewer)"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-300 group ${radarEnabled ? 'bg-blue-500/20 text-blue-400 border border-blue-500/20 shadow-lg' : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/5'}`}
+            title="Radar Pluie"
           >
-            <CloudRain size={16} className={radarEnabled ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} />
-            <span className="text-[10px] font-black uppercase tracking-widest pr-2 hidden md:block">
+            <CloudRain size={18} className={radarEnabled ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] pr-2 hidden lg:block">
               Radar Pluie
             </span>
           </button>
 
           <button
             onClick={() => setWindEnabled(!windEnabled)}
-            className={`flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group ${windEnabled ? 'bg-teal-900/40 text-teal-400' : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}
-            title="Animation du Vent"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-300 group ${windEnabled ? 'bg-teal-500/20 text-teal-400 border border-teal-500/20 shadow-lg' : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/5'}`}
+            title="Flux de Vent"
           >
-            <Wind size={16} className={windEnabled ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} />
-            <span className="text-[10px] font-black uppercase tracking-widest pr-2 hidden md:block">
+            <Wind size={18} className={windEnabled ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] pr-2 hidden lg:block">
               Flux de Vent
             </span>
           </button>
@@ -367,45 +420,45 @@ function createWeatherIconHtml(p) {
   if (code >= 71 && code <= 86) icon = "❄️";
   if (code >= 95) icon = "⚡";
 
-  let badgeColor = "bg-slate-900/95 border-white/10";
-  if (p.isStart) badgeColor = "bg-slate-800 border-slate-400/50";
-  if (p.isEnd) badgeColor = "bg-slate-800 border-white/50";
+  let badgeColor = "bg-zinc-950/80 border-white/20";
+  if (p.isStart) badgeColor = "bg-blue-900 border-blue-400/50";
+  if (p.isEnd) badgeColor = "bg-emerald-900 border-emerald-400/50";
 
   return `
-    <div class="relative flex flex-col items-center justify-center translate-y-[-50%] pointer-events-none">
-      <div class="flex items-center gap-2 px-3 py-1.5 ${badgeColor} border rounded-lg shadow-2xl text-white font-black text-[11px] backdrop-blur-xl">
-        <span class="text-lg opacity-90">${icon}</span>
-        <span>${temp}${p.weather ? '°' : ''}</span>
+    <div class="relative flex flex-col items-center justify-center translate-y-[-50%] pointer-events-none drop-shadow-2xl scale-[1.1]">
+      <div class="flex items-center gap-2 px-3.5 py-2 ${badgeColor} border rounded-[1.2rem] shadow-2xl text-white font-black text-[12px] backdrop-blur-2xl">
+        <span class="text-xl leading-none">${icon}</span>
+        <span class="tracking-tighter">${temp}${p.weather ? '°' : ''}</span>
       </div>
-      <div class="w-0.5 h-3 bg-white/20 mt-1"></div>
+      <div class="w-1 h-4 bg-zinc-100/30 mt-1 rounded-full"></div>
     </div>
   `;
 }
 
 function createWeatherPopupHtml(p) {
   const weather = p.weather;
-  if (!weather) return `<div class="p-4 text-slate-400 text-[9px] font-black uppercase tracking-widest bg-slate-900 rounded-lg border border-white/5">Données indisponibles</div>`;
+  if (!weather) return `<div class="p-4 text-zinc-400 text-[10px] font-black uppercase tracking-widest bg-zinc-950 rounded-2xl border border-white/5">Données indisponibles</div>`;
   
   return `
-    <div class="p-1 min-w-[200px]">
-      <div class="text-[8px] text-slate-500 uppercase font-black tracking-[0.3em] mb-4 border-b border-white/5 pb-3">
-        ${p.isStart ? 'DÉPART' : p.isEnd ? 'ARRIVÉE' : 'POINT DE PASSAGE'}
+    <div class="p-2 min-w-[220px] bg-zinc-950/20">
+      <div class="text-[9px] text-zinc-500 uppercase font-black tracking-[0.3em] mb-5 border-b border-white/10 pb-4">
+        ${p.isStart ? 'ZONE DE DÉPART' : p.isEnd ? 'DESTINATION' : 'POINT DE PASSAGE'}
       </div>
-      <div class="flex items-center justify-between mb-5">
-        <div class="text-4xl font-black text-white tracking-tighter">${Math.round(weather.temperature_2m)}°<span class="text-lg text-slate-500 ml-0.5">C</span></div>
+      <div class="flex items-center justify-between mb-6">
+        <div class="text-5xl font-black text-white tracking-tighter">${Math.round(weather.temperature_2m)}°<span class="text-xl text-zinc-600 ml-1">C</span></div>
         <div class="text-right">
-          <div class="text-[8px] text-slate-600 font-black uppercase tracking-tighter">RESSENTI</div>
-          <div class="text-sm font-black text-slate-400">${Math.round(weather.apparent_temperature)}°</div>
+          <div class="text-[9px] text-zinc-600 font-black uppercase tracking-tighter mb-1">RESSENTI</div>
+          <div class="text-lg font-black text-blue-400">${Math.round(weather.apparent_temperature)}°</div>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-4 text-[9px]">
-        <div class="flex flex-col gap-1">
-          <span class="text-slate-600 uppercase font-black tracking-widest">Vent</span>
-          <span class="text-white font-black hover:text-slate-300 transition-colors uppercase italic">${Math.round(weather.wind_speed_10m)} <span class="text-[7px] opacity-40">KMH</span></span>
+      <div class="grid grid-cols-2 gap-6">
+        <div class="flex flex-col gap-1.5">
+          <span class="text-[8px] text-zinc-600 uppercase font-black tracking-widest">Vent de face</span>
+          <span class="text-white font-black text-[13px] italic">${Math.round(weather.wind_speed_10m)} <span class="text-[8px] opacity-40 font-bold">KM/H</span></span>
         </div>
-        <div class="flex flex-col gap-1 text-right">
-          <span class="text-slate-600 uppercase font-black tracking-widest">Humidité</span>
-          <span class="text-white font-black uppercase italic">${weather.relative_humidity_2m}<span class="text-[7px] opacity-40">%</span></span>
+        <div class="flex flex-col gap-1.5 text-right">
+          <span class="text-[8px] text-zinc-600 uppercase font-black tracking-widest">Humidité</span>
+          <span class="text-white font-black text-[13px] italic">${weather.relative_humidity_2m}<span class="text-[8px] opacity-40 font-bold">%</span></span>
         </div>
       </div>
     </div>

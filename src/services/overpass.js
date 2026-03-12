@@ -96,13 +96,19 @@ export async function getVitalPOIs(routeCoordinates) {
   `;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s max (V6.2)
+
     const response = await fetch(OVERPASS_URL, {
       method: 'POST',
       body: query,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      }
+      },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) throw new Error('Overpass API error');
     

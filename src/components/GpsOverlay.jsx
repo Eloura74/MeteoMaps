@@ -5,14 +5,7 @@ import { LocateFixed, Locate, Compass, Gauge } from 'lucide-react';
 const GpsOverlay = ({ onCenterRequest }) => {
   const { position, heading, speed, accuracy, isTracking, startTracking, stopTracking, error } = useLocationStore();
 
-  // Démarrer le tracking au montage si on le souhaite (ou laisser l'utilisateur cliquer)
-  /* useEffect(() => {
-    startTracking();
-    return () => stopTracking();
-  }, []); */
-
   const handleToggleTracking = () => {
-    console.log("🔥 BOUTON GPS CLIQUÉ !", { isTracking, navGeo: !!navigator.geolocation });
     if (isTracking) {
       stopTracking();
     } else {
@@ -27,57 +20,56 @@ const GpsOverlay = ({ onCenterRequest }) => {
   };
 
   return (
-    <div className="absolute bottom-6 md:bottom-10 left-3 md:left-6 z-[1000] flex flex-col items-start gap-2">
+    <div className="absolute bottom-24 md:bottom-10 left-6 z-[1000] flex flex-col items-start gap-4">
       
-      {/* Vitesse & Boussole (Si en mouvement) */}
+      {/* Vitesse & Boussole Haute Couture */}
       {(speed !== null && speed > 1) && (
-        <div className="bg-slate-900/90 backdrop-blur-md border border-white/10 rounded-xl p-3 flex gap-4 shadow-xl mb-2 animate-in slide-in-from-left-2">
-          <div className="flex flex-col items-center justify-center">
-            <span className="text-2xl font-black text-white leading-none">{Math.round(speed * 3.6)}</span>
-            <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">KM/H</span>
+        <div className="bg-zinc-950/60 backdrop-blur-2xl border border-white/10 rounded-2xl p-4 flex gap-6 shadow-2xl mb-2 animate-spring-up overflow-hidden relative">
+          <div className="absolute inset-0 bg-blue-500/5 pointer-events-none" />
+          <div className="flex flex-col items-center justify-center relative z-10">
+            <span className="text-3xl font-black text-white leading-none tracking-tighter">{Math.round(speed * 3.6)}</span>
+            <span className="text-[8px] text-zinc-500 uppercase tracking-[0.3em] font-black mt-1">KM/H</span>
           </div>
-          <div className="w-px bg-white/10"></div>
+          <div className="w-px bg-white/10 relative z-10"></div>
           {heading !== null && (
-            <div className="flex flex-col items-center justify-center">
+            <div className="flex flex-col items-center justify-center relative z-10">
               <Compass 
                 className="text-white mb-1 transition-transform duration-500" 
-                size={20} 
+                size={24} 
                 style={{ transform: `rotate(${heading}deg)` }} 
               />
-              <span className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">{Math.round(heading)}°</span>
+              <span className="text-[8px] text-zinc-500 uppercase tracking-[0.3em] font-black">{Math.round(heading)}°</span>
             </div>
           )}
         </div>
       )}
 
-      {/* Message d'erreur GPS */}
-      {error && (
-        <div className="bg-red-500/20 text-red-400 border border-red-500/30 text-xs px-3 py-1.5 rounded-md backdrop-blur-md font-medium">
-          {error}
-        </div>
-      )}
-
-      {/* Contrôles GPS */}
-      <div className="flex flex-col gap-2">
+      {/* Contrôles GPS flottants */}
+      <div className="flex flex-col gap-3">
         <button
           onClick={handleToggleTracking}
-          className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 border backdrop-blur-md ${isTracking ? 'bg-blue-600/90 text-white border-blue-400/50 shadow-blue-500/20' : 'bg-slate-900/90 text-slate-400 border-white/10 hover:text-white'}`}
+          className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-2xl transition-all duration-500 border backdrop-blur-3xl group ${isTracking ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/40 scale-110' : 'bg-zinc-950/60 text-zinc-400 border-white/10 hover:text-white hover:bg-zinc-900'}`}
           title={isTracking ? "Arrêter le suivi GPS" : "Démarrer le suivi GPS"}
         >
-          {isTracking ? <LocateFixed size={22} className="animate-pulse" /> : <Locate size={22} />}
+          {isTracking ? <LocateFixed size={24} className="animate-pulse" /> : <Locate size={24} className="group-hover:scale-110 transition-transform" />}
         </button>
         
         {isTracking && position && (
           <button
             onClick={handleRecenter}
-            className="w-10 h-10 ml-1 rounded-full bg-slate-800/80 text-white flex items-center justify-center shadow-lg border border-white/10 hover:bg-slate-700 transition-colors backdrop-blur-md animate-in slide-in-from-bottom-2"
+            className="w-12 h-12 rounded-2xl bg-zinc-900/80 text-white flex items-center justify-center shadow-2xl border border-white/5 hover:bg-zinc-800 transition-all backdrop-blur-3xl animate-spring-up"
             title="Recentrer sur ma position"
           >
-            <LocateFixed size={18} />
+            <LocateFixed size={20} />
           </button>
         )}
       </div>
-      
+
+      {error && (
+        <div className="bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] px-4 py-2 rounded-xl backdrop-blur-2xl font-black uppercase tracking-widest shadow-2xl">
+          {error}
+        </div>
+      )}
     </div>
   );
 };

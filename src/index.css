@@ -8,62 +8,82 @@
 
 body {
   margin: 0;
-  display: flex;
-  place-content: center;
-  min-width: 320px;
-  min-height: 100vh;
-  background-color: #020617;
+  padding: 0;
+  background-color: #09090b; /* Zinc 950 */
+  color: #f4f4f5;
+  font-family: 'Inter', -apple-system, sans-serif;
+  overflow: hidden;
 }
 
 #root {
-  width: 100%;
+  width: 100vw;
   height: 100vh;
 }
 
-/* Custom Scrollbar for a cleaner look */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+/* Glass Pro Design System */
+.glass-pro {
+  @apply bg-zinc-900/60 backdrop-blur-3xl border border-white/10 shadow-2xl;
 }
 
-/* Glassmorphism & Grey Elegant Effects */
-.glass-panel {
-  @apply bg-slate-900/90 backdrop-blur-xl border border-white/10 shadow-xl;
+.glass-card {
+  @apply bg-zinc-900/30 backdrop-blur-xl border border-white/5 rounded-2xl;
 }
 
-.glow-grey {
-  box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
+.glass-header {
+  @apply bg-zinc-950/40 backdrop-blur-2xl border-b border-white/5;
 }
 
-/* Leaflet Overrides */
-.weather-popup .leaflet-popup-content-wrapper {
-  @apply glass-panel text-slate-100 rounded-lg p-1;
+/* Layout Architecture V6.1 - Overlay System */
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: #09090b;
 }
 
-.weather-popup .leaflet-popup-tip {
-  @apply bg-slate-900/90;
+.main-content {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
 }
 
-.custom-weather-icon {
-  background: transparent;
-  border: none;
+/* Sidebar / Panels */
+.panel-desktop {
+  @apply hidden md:flex fixed top-4 bottom-4 left-4 w-96 z-[1002] glass-pro rounded-[2rem] overflow-hidden flex-col shadow-[0_0_50px_rgba(0,0,0,0.5)];
 }
 
-/* Custom Scrollbar for Horizontal Lists */
+.bottom-tab-mobile {
+  @apply flex md:hidden fixed bottom-0 left-0 right-0 h-16 z-[2000] glass-pro border-t border-white/5;
+}
+
+/* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
+  width: 5px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3); /* Slate 400 */
-  border-radius: 10px;
+  @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
 }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.6);
+
+/* Leaflet Overrides for Dark Mode */
+.leaflet-container {
+  background: #09090b !important;
+}
+
+/* Animations */
+@keyframes spring-up {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.animate-spring-up {
+  animation: spring-up 0.6s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* Micro-states */
+.btn-premium {
+  @apply transition-all duration-300 active:scale-95 hover:brightness-110 disabled:opacity-50;
 }
