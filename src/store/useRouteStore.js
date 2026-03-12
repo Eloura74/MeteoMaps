@@ -121,6 +121,8 @@ const useRouteStore = create((set, get) => ({
       });
       set({ routeScore: { value: scoreNum, grade: getScoreGrade(scoreNum) } });
 
+      set({ status: 'Recherche des points d\'eau et abris...' });
+      const poisData = await getVitalPOIs(route.geometry.coordinates);
       set({ pois: poisData });
 
       // Analyse Physique de l'Effort
