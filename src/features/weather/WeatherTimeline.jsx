@@ -88,9 +88,22 @@ const WeatherTimeline = ({ weatherPoints }) => {
                       )}
                     </div>
                     <div className="flex items-center gap-1 text-[8px] font-black uppercase text-slate-500 bg-white/5 w-full justify-center py-1 rounded">
-                      <CloudRain size={8} /> {p.weather ? p.weather.precipitation : 0} <span className="text-[6px] opacity-60">mm</span>
+                       <CloudRain size={8} /> {p.weather ? p.weather.precipitation : 0} <span className="text-[6px] opacity-60">mm</span>
                     </div>
                   </div>
+
+                  {/* Solar Analysis Badge */}
+                  {p.exposition && (
+                    <div className={`mt-1 flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[7px] font-black uppercase tracking-widest ${
+                      p.exposition === 'Ensoleillé' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+                      p.exposition === 'Ombre' ? 'bg-slate-800 border-white/5 text-slate-400' :
+                      'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                    }`}>
+                      {p.exposition === 'Ensoleillé' ? <Sun size={8} /> : 
+                       p.exposition === 'Nuit' ? <Moon size={8} /> : <Cloud size={8} />}
+                      {p.exposition}
+                    </div>
+                  )}
               </div>
             );
           })}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Milestone, Map as MapIcon, Loader2, Download, ChevronUp, ChevronDown, User, LogOut, Library } from 'lucide-react';
+import { Milestone, Map as MapIcon, Loader2, Download, ChevronUp, ChevronDown, User, LogOut, Library, Zap, Flame, Clock8 } from 'lucide-react';
 import MapContainer from './components/MapContainer';
 import ElevationProfile from './components/ElevationProfile';
 import SearchPanel from './features/routing/SearchPanel';
@@ -13,6 +13,7 @@ import AuthModal from './components/AuthModal';
 import useAuthStore from './store/useAuthStore';
 import SaveRouteButton from './components/SaveRouteButton';
 import RouteLibrary from './components/RouteLibrary';
+import RouteSelector from './components/RouteSelector';
 
 function App() {
   const {
@@ -20,11 +21,13 @@ function App() {
     route,
     routes,
     activeRouteIndex,
-    setActiveRoute,
+    setActiveRouteIndex,
+    routeScores,
     weatherPoints,
     elevationPoints,
     totalAscent,
     routeScore,
+    physicAnalysis,
     pois,
     loading,
     status,
@@ -118,6 +121,13 @@ function App() {
         {activeRoute && weatherPoints.length > 0 && (
           <div className="mt-2 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
              
+             <RouteSelector 
+               routes={routes} 
+               activeIndex={activeRouteIndex} 
+               scores={routeScores} 
+               onSelect={setActiveRouteIndex} 
+             />
+
              {weatherAlerts && weatherAlerts.length > 0 && (
               <div className="space-y-2">
                 {weatherAlerts.map((alert, idx) => (
@@ -140,13 +150,54 @@ function App() {
                    <div className="text-[9px] text-slate-500 uppercase font-black mb-1.5 tracking-widest">Distance</div>
                    <div className="text-sm font-black text-slate-200 tracking-tight">{(activeRoute.distance / 1000).toFixed(1)} <span className="text-[8px] text-slate-500">KM</span></div>
                 </div>
-                <div className="bg-slate-950/60 p-3 rounded-lg border border-white/5 flex flex-col justify-between">
-                   <div className="text-[9px] text-slate-500 uppercase font-black mb-1.5 tracking-widest">Durée</div>
-                   <div className="text-sm font-black text-slate-200 tracking-tight">{Math.floor(activeRoute.duration / 60)} <span className="text-[8px] text-slate-500">MIN</span></div>
-                </div>
-             </div>
+                 <div className="bg-slate-950/60 p-3 rounded-lg border border-white/5 flex flex-col justify-between">
+                    <div className="text-[9px] text-slate-500 uppercase font-black mb-1.5 tracking-widest">Durée</div>
+                    <div className="text-sm font-black text-slate-200 tracking-tight">{Math.floor(activeRoute.duration / 60)} <span className="text-[8px] text-slate-500">MIN</span></div>
+                 </div>
+              </div>
 
-             <SaveRouteButton onRequireAuth={() => setIsAuthModalOpen(true)} />
+              {physicAnalysis && (
+                <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                       <Zap size={14} className="text-blue-400" />
+                       <span className="text-[9px] font-black uppercase tracking-widest text-blue-400">Analyse de Performance</span>
+                    </div>
+                    {physicAnalysis.penaltyMinutes > 0 && (
+                      <span className="text-[8px] font-bold text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded-full">
+                        +{physicAnalysis.penaltyMinutes} min d'effort météo
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">Temps Réel Estimé</div>
+                      <div className="flex items-baseline gap-1.5">
+                        <Clock8 size={12} className="text-slate-200" />
+                        <span className="text-lg font-black text-white">
+                          {Math.floor(physicAnalysis.correctedDuration / 3600)}h{Math.floor((physicAnalysis.correctedDuration % 3600) / 60)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="space-y-1 text-right">
+                      <div className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">Dépense Énergétique</div>
+                      <div className="flex items-baseline gap-1.5 justify-end">
+                        <Flame size={12} className="text-orange-500" />
+                        <span className="text-lg font-black text-white">{physicAnalysis.calories}</span>
+                        <span className="text-[8px] text-slate-500 font-bold">KCAL</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-[8px] text-slate-500 font-bold uppercase">Puissance moyenne estimée</span>
+                    <span className="text-[10px] font-black text-blue-400">{physicAnalysis.avgWatts} WATTS</span>
+                  </div>
+                </div>
+              )}
+
+              <SaveRouteButton onRequireAuth={() => setIsAuthModalOpen(true)} />
 
              <button onClick={exportGPX} className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-white/10 flex items-center justify-center gap-2 transition-colors shadow-inner">
                  <Download size={14} /> <span className="text-[10px] font-black uppercase tracking-widest">Exporter le tracé (GPX)</span>
@@ -175,7 +226,7 @@ function App() {
             <MapContainer 
               routes={routes} 
               activeRouteIndex={activeRouteIndex}
-              onRouteSelect={setActiveRoute}
+              onRouteSelect={setActiveRouteIndex}
               weatherPoints={weatherPoints} 
               pois={pois}
               onRegisterCenterFunction={(fn) => mapCenterRef.current = fn}

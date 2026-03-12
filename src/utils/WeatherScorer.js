@@ -146,3 +146,111 @@ export function getGradeColor(grade) {
         case 'F': default: return 'text-red-500 border-red-500/30 bg-red-500/10';
     }
 }
+
+/**
+ * Calcule l'impact physique ( Effort / Watts / Temps )
+ */
+export function calculatePhysicalEffort({ distance, totalAscent, weatherPoints, averageSpeedKmh = 20 }) {
+    // Constantes physiques simplifiées (base cycliste moyen)
+    const mass = 85; 
+    const g = 9.81;
+    const Rho = 1.225;
+    const CdA = 0.4;
+    const Crr = 0.005;
+
+    let totalJoules = 0;
+    let totalSecondsNormal = distance / (averageSpeedKmh / 3.6);
+    let totalSecondsWithPenalty = 0;
+
+    // Analyse par segment (weatherPoints sont nos échantillons)
+    for (let i = 1; i < weatherPoints.length; i++) {
+        const p1 = weatherPoints[i-1];
+        const p2 = weatherPoints[i];
+        
+        const segmentDist = distance / (weatherPoints.length - 1); // Approximation
+        const segmentAscent = (totalAscent / (weatherPoints.length - 1)); // Approximation splitte
+        const slope = segmentAscent / segmentDist;
+
+        const v = averageSpeedKmh / 3.6; // Vitesse cible en m/s
+        const headwind = (p2.aero?.headwind || 0) / 3.6; // m/s
+        
+        // Puissance nécessaire (Watts)
+        const pGrav = mass * g * v * slope;
+        const pRoll = mass * g * v * Crr;
+        const pAir = 0.5 * CdA * Rho * Math.pow(v + headwind, 2) * v;
+        
+        const powerTotal = Math.max(0, pGrav + pRoll + pAir);
+        
+        // Coût énergétique du segment (Joules = Watts * secondes)
+        const segmentTime = segmentDist / v;
+        totalJoules += powerTotal * segmentTime;
+
+        // Calcul du ralentissement (Approximation : le vent de face et la pente allongent le temps)
+        // Facteur de peine : Si Power > Power_Base, le temps augmente
+        const powerBase = mass * g * v * Crr + 0.5 * CdA * Rho * Math.pow(v, 2) * v;
+        const penaltyFactor = powerTotal / Math.max(1, powerBase);
+        
+        // On limite la pénalité pour ne pas avoir des temps infinis
+        const cappedPenalty = Math.min(2.5, penaltyFactor); 
+        totalSecondsWithPenalty += segmentTime * cappedPenalty;
+    }
+
+    const totalKcal = totalJoules / 4184 / 0.24; // divisé par rendement humain (24%)
+
+    return {
+        correctedDuration: Math.round(totalSecondsWithPenalty),
+        calories: Math.round(totalKcal),
+        avgWatts: Math.round(totalJoules / totalSecondsNormal),
+        penaltyMinutes: Math.round((totalSecondsWithPenalty - totalSecondsNormal) / 60)
+    };
+}
+
+/**
+ * Calcule la position du soleil (Azimuth et Élévation)
+ */
+export function calculateSolarPosition(lat, lng, timestamp) {
+    const date = new Date(timestamp * 1000);
+    const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
+    
+    // Déclinaison (radians)
+    const delta = 23.45 * Math.sin((360 / 365) * (dayOfYear - 81) * Math.PI / 180) * Math.PI / 180;
+    
+    // Angle horaire (H)
+    const hour = date.getUTCHours() + date.getUTCMinutes() / 60;
+    const h = (hour - 12) * 15 * Math.PI / 180;
+    
+    const phi = lat * Math.PI / 180;
+    
+    // Élévation
+    const elevation = Math.asin(Math.sin(phi) * Math.sin(delta) + Math.cos(phi) * Math.cos(delta) * Math.cos(h));
+    
+    // Azimuth
+    const azimuth = Math.acos((Math.sin(delta) - Math.sin(phi) * Math.sin(elevation)) / (Math.cos(phi) * Math.cos(elevation)));
+    
+    return {
+        elevation: elevation * 180 / Math.PI,
+        azimuth: (h > 0 ? 360 - (azimuth * 180 / Math.PI) : azimuth * 180 / Math.PI) % 360
+    };
+}
+
+/**
+ * Estime si le point est à l'ombre ou au soleil
+ */
+export function getSolarExposure(lat, lng, timestamp, slope, aspect) {
+    const sun = calculateSolarPosition(lat, lng, timestamp);
+    
+    if (sun.elevation < 2) return 'Nuit';
+    if (sun.elevation < 10) return 'Aube/Crépuscule';
+
+    // Analyse d'ombre portée simplifiée :
+    // Si la pente est forte (> 15%) et que le soleil est derrière la montagne
+    // On compare l'azimuth du soleil et l'orientation de la pente (aspect)
+    const aspectDiff = Math.abs(sun.azimuth - aspect);
+    if (slope > 0.15 && aspectDiff > 120 && aspectDiff < 240 && sun.elevation < 30) {
+        return 'Ombre';
+    }
+    
+    return 'Ensoleillé';
+}
+
+

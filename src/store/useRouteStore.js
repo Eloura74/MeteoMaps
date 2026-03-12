@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { searchPlaces, getRoute, sampleRoutePoints, getWeatherData, getElevationData } from '../services/api';
 import { getVitalPOIs } from '../services/overpass';
-import { calculateRouteScore, getScoreGrade, calculateBearing, calculateRelativeWind } from '../utils/WeatherScorer';
+import { calculateRouteScore, getScoreGrade, calculateBearing, calculateRelativeWind, calculatePhysicalEffort, getSolarExposure } from '../utils/WeatherScorer';
 import { supabase } from '../lib/supabase';
 
 const useRouteStore = create((set, get) => ({
@@ -18,6 +18,8 @@ const useRouteStore = create((set, get) => ({
   totalAscent: 0,
   pois: [],
   routeScore: null,
+  routeScores: [], // Scores pour toutes les alternatives [ { value, grade, label } ]
+  physicAnalysis: null, // Données d'effort (Watts, Calories, Temps Corrigé)
   loading: false,
   status: '',
   departureDate: new Date().toISOString().slice(0, 16),
@@ -27,6 +29,10 @@ const useRouteStore = create((set, get) => ({
   // Setters
   setMode: (mode) => set({ mode }),
   setDepartureDate: (date) => set({ departureDate: date }),
+  setActiveRouteIndex: (index) => {
+    set({ activeRouteIndex: index });
+    get().calculateRouteDetails(index);
+  },
 
   // Waypoints API
   updateWaypoint: (id, updates) => {
@@ -76,13 +82,20 @@ const useRouteStore = create((set, get) => ({
       const baseTs = Math.floor(new Date(departureDate).getTime() / 1000);
       const weatherData = await getWeatherData(sampledWaypoints, baseTs);
       
-      // Enrichinement Aero
+      // Enrichinement Aero & Solaire
       const enrichedWeather = weatherData.map((wp, idx) => {
-          if (idx === 0) return { ...wp, aero: { headwind: 0, tailwind: 0, crosswind: 0 } };
-          const prev = weatherData[idx - 1];
-          const bearing = calculateBearing(prev.lat, prev.lng, wp.lat, wp.lng);
-          const aero = calculateRelativeWind(wp.weather.wind_speed_10m, wp.weather.wind_direction_10m, bearing);
-          return { ...wp, aero };
+          const timestamp = baseTs + (wp.timeOffset || 0);
+          
+          let aero = { headwind: 0, tailwind: 0, crosswind: 0 };
+          if (idx > 0) {
+              const prev = weatherData[idx - 1];
+              const bearing = calculateBearing(prev.lat, prev.lng, wp.lat, wp.lng);
+              aero = calculateRelativeWind(wp.weather.wind_speed_10m, wp.weather.wind_direction_10m, bearing);
+          }
+
+          const exposition = getSolarExposure(wp.lat, wp.lng, timestamp, 0, 0); // Pente=0 par défaut ici
+          
+          return { ...wp, aero, exposition };
       });
 
       set({ weatherPoints: enrichedWeather });
@@ -108,9 +121,16 @@ const useRouteStore = create((set, get) => ({
       });
       set({ routeScore: { value: scoreNum, grade: getScoreGrade(scoreNum) } });
 
-      set({ status: 'Recherche des points d\'eau et abris...' });
-      const poisData = await getVitalPOIs(route.geometry.coordinates);
       set({ pois: poisData });
+
+      // Analyse Physique de l'Effort
+      const physical = calculatePhysicalEffort({
+          distance: route.distance,
+          totalAscent: ascent,
+          weatherPoints: enrichedWeather,
+          averageSpeedKmh: get().mode === 'bike' ? 22 : get().mode === 'foot' ? 4.5 : 20
+      });
+      set({ physicAnalysis: physical });
 
       // Analyze Weather Alerts
       const alerts = [];
@@ -134,18 +154,42 @@ const useRouteStore = create((set, get) => ({
   },
 
   handleCalculateRoute: async () => {
-    const { waypoints, mode } = get();
+    const { waypoints, mode, departureDate } = get();
     const validPlaces = waypoints.filter(w => w.place !== null);
     
     if (validPlaces.length < 2) return;
 
-    set({ loading: true, status: "Calcul de l'itinéraire..." });
+    set({ loading: true, status: "Calcul des itinéraires alternatifs..." });
     
     try {
       const coordinates = validPlaces.map(w => w.place.coordinates);
       const routesData = await getRoute(coordinates, mode);
       
-      set({ routes: routesData, activeRouteIndex: 0 });
+      set({ routes: routesData, activeRouteIndex: 0, status: "Intelligence comparative : Scoring des options..." });
+
+      // Scoring en parallèle de TOUTES les routes pour la recommandation
+      const baseTs = Math.floor(new Date(departureDate).getTime() / 1000);
+      
+      const scoredRoutes = await Promise.all(routesData.map(async (r, i) => {
+          const sampled = sampleRoutePoints(r, 6); // Échantillonnage plus léger pour le choix rapide
+          const weather = await getWeatherData(sampled, baseTs);
+          const scoreNum = calculateRouteScore({ 
+              distance: r.distance, 
+              totalAscent: 0, // Ignoré pour le scoring rapide (on affinera sur l'active)
+              weatherPoints: weather 
+          });
+          
+          let label = "Option " + (i + 1);
+          if (i === 0) label = "Principal";
+          if (r.duration === Math.min(...routesData.map(rt => rt.duration))) label = "Plus rapide";
+          if (r.distance === Math.min(...routesData.map(rt => rt.distance))) label = "Plus court";
+
+          return { value: scoreNum, grade: getScoreGrade(scoreNum), label };
+      }));
+
+      set({ routeScores: scoredRoutes });
+      
+      // Lance l'analyse détaillée sur la route principale
       await get().calculateRouteDetails(0);
       
     } catch (error) {
